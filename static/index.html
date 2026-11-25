@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LapPulse — Центр управления ноутбуком</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div>
+          <h1>LapPulse</h1>
+          <p class="subtitle" id="sys-meta">Загрузка информации о системе...</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span class="badge badge-live" id="live-status">● LIVE</span>
+        <span class="badge" id="uptime-badge">Аптайм: —</span>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="system">📊 Система</button>
+      <button class="tab" data-tab="disk">💾 Анализ диска</button>
+      <button class="tab" data-tab="focus">⏱️ Фокус & Задачи</button>
+      <button class="tab" data-tab="tools">🛠️ Утилиты</button>
+    </nav>
+
+    <main>
+      <!-- Вкладка: Система -->
+      <section id="tab-system" class="tab-panel active">
+        <div class="cards-grid">
+          <div class="card">
+            <div class="card-head">
+              <span>Процессор (CPU)</span>
+              <strong id="cpu-pct">0%</strong>
+            </div>
+            <div class="progress"><div class="progress-bar" id="cpu-bar"></div></div>
+            <p class="card-sub" id="cpu-sub">Ядра: —</p>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <span>Оперативная память (RAM)</span>
+              <strong id="ram-pct">0%</strong>
+            </div>
+            <div class="progress"><div class="progress-bar bar-purple" id="ram-bar"></div></div>
+            <p class="card-sub" id="ram-sub">0 / 0 ГБ</p>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <span>Накопитель (SSD)</span>
+              <strong id="disk-pct">0%</strong>
+            </div>
+            <div class="progress"><div class="progress-bar bar-amber" id="disk-bar"></div></div>
+            <p class="card-sub" id="disk-sub">Свободно: —</p>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <span>Питание и Сеть</span>
+              <strong id="bat-pct">—</strong>
+            </div>
+            <p class="card-sub" id="bat-sub">Проверка батареи...</p>
+            <p class="card-sub" id="net-sub">Сеть: ↑ 0 МБ / ↓ 0 МБ</p>
+          </div>
+        </div>
+
+        <div class="card panel-block">
+          <div class="panel-header">
+            <h2>Активные процессы</h2>
+            <input type="text" id="proc-search" placeholder="Поиск процесса..." />
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>PID</th>
+                  <th>Процесс</th>
+                  <th>CPU %</th>
+                  <th>RAM %</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody id="proc-body">
+                <tr><td colspan="5" class="muted">Загрузка...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Вкладка: Анализ диска -->
+      <section id="tab-disk" class="tab-panel">
+        <div class="card panel-block">
+          <div class="panel-header">
+            <h2>Что занимает место на диске</h2>
+            <div class="inline-form">
+              <input type="text" id="scan-path" value="~" placeholder="Путь к папке (например ~ или /)" />
+              <button class="btn" id="btn-scan">Сканировать</button>
+            </div>
+          </div>
+          <p class="muted" id="scan-status">Нажмите «Сканировать», чтобы найти самые тяжёлые файлы и папки.</p>
+          <div id="scan-results" class="scan-list"></div>
+        </div>
+      </section>
+
+      <!-- Вкладка: Фокус и Задачи -->
+      <section id="tab-focus" class="tab-panel">
+        <div class="two-col">
+          <div class="card panel-block center-col">
+            <h2>Фокус-таймер (Pomodoro)</h2>
+            <div class="timer-display" id="timer-display">25:00</div>
+            <div class="timer-modes">
+              <button class="btn btn-sm active" data-mins="25">Фокус 25м</button>
+              <button class="btn btn-sm" data-mins="5">Перерыв 5м</button>
+              <button class="btn btn-sm" data-mins="15">Отдых 15м</button>
+            </div>
+            <div class="timer-actions">
+              <button class="btn" id="timer-toggle">Старт</button>
+              <button class="btn btn-ghost" id="timer-reset">Сброс</button>
+            </div>
+          </div>
+
+          <div class="card panel-block">
+            <h2>Быстрые задачи</h2>
+            <div class="inline-form">
+              <input type="text" id="task-input" placeholder="Добавить задачу..." />
+              <button class="btn" id="btn-add-task">+</button>
+            </div>
+            <ul id="task-list" class="task-list"></ul>
+          </div>
+        </div>
+
+        <div class="card panel-block">
+          <h2>Быстрая заметка</h2>
+          <textarea id="quick-note" rows="5" placeholder="Запишите сюда любую мысль, команду или ссылку — всё сохранится локально..."></textarea>
+          <div class="note-footer">
+            <span class="muted" id="note-saved">Сохранено</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Вкладка: Утилиты -->
+      <section id="tab-tools" class="tab-panel">
+        <div class="two-col">
+          <div class="card panel-block">
+            <h2>Генератор надёжных паролей</h2>
+            <div class="form-row">
+              <label>Длина: <strong id="pw-len-val">16</strong></label>
+              <input type="range" id="pw-len" min="8" max="40" value="16" />
+            </div>
+            <div class="pw-box">
+              <input type="text" id="pw-output" readonly />
+              <button class="btn" id="btn-copy-pw">Копировать</button>
+            </div>
+            <button class="btn btn-ghost" id="btn-gen-pw">Сгенерировать новый</button>
+          </div>
+
+          <div class="card panel-block">
+            <h2>Конвертер объёма данных</h2>
+            <div class="inline-form">
+              <input type="number" id="bytes-val" value="1" min="0" step="any" />
+              <select id="bytes-unit">
+                <option value="GB">ГБ (Гигабайты)</option>
+                <option value="MB">МБ (Мегабайты)</option>
+                <option value="KB">КБ (Килобайты)</option>
+                <option value="TB">ТБ (Терабайты)</option>
+                <option value="B">Б (Байты)</option>
+              </select>
+            </div>
+            <div id="bytes-results" class="conv-results"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
