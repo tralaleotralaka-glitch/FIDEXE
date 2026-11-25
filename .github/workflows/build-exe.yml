@@ -5,6 +5,9 @@ on:
     branches: ["**"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   windows-exe:
     runs-on: windows-latest
@@ -35,14 +38,57 @@ jobs:
           $process = Start-Process -FilePath "dist\FIDEXE.exe" -ArgumentList "--selftest" -PassThru -Wait -NoNewWindow
           if ($process.ExitCode -ne 0) { throw "selftest failed with exit code $($process.ExitCode)" }
 
-      - name: Show artifact size
+      - name: Show artifact details
+        id: details
         shell: pwsh
-        run: Get-Item dist\FIDEXE.exe | Select-Object Name, @{n = 'SizeMB'; e = { [math]::Round($_.Length / 1MB, 1) } }
+        run: |
+          $file = Get-Item dist\FIDEXE.exe
+          $hash = (Get-FileHash dist\FIDEXE.exe -Algorithm SHA256).Hash.ToLower()
+          $size = [math]::Round($file.Length / 1MB, 1)
+          "size_mb=$size" | Out-File -Append $env:GITHUB_OUTPUT
+          "sha256=$hash" | Out-File -Append $env:GITHUB_OUTPUT
+          "| FIDEXE.exe | $size MB | ``$hash`` |" | Out-File -Append $env:GITHUB_STEP_SUMMARY
 
-      - name: Upload exe
+      - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
           name: FIDEXE-windows-exe
           path: dist/FIDEXE.exe
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
+
+      - name: Publish GitHub release with the exe
+        if: github.ref_name == 'arena/e4167a20-fidexe'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SIZE_MB: ${{ steps.details.outputs.size_mb }}
+          SHA256: ${{ steps.details.outputs.sha256 }}
+        run: |
+          $notes = @"
+          **FIDEXE 1.0.0** — история буфера обмена и статистика приложений для Windows 10/11.
+
+          ### Как запустить
+          1. Скачайте `FIDEXE.exe` ниже.
+          2. Запустите — установка не нужна, прав администратора тоже.
+          3. Windows SmartScreen может показать предупреждение, потому что файл не подписан сертификатом:
+             «Подробнее» → «Выполнить в любом случае».
+
+          ### Что внутри
+          - история буфера обмена: текст, ссылки, код, изображения, поиск, закрепление, экспорт;
+          - статистика приложений: время в фокусе по дням, топ приложений, ритм дня;
+          - локальный вход по почте (PBKDF2-SHA256), гостевой режим;
+          - тёмная и светлая темы, автозапуск, трей, горячие клавиши.
+
+          Данные хранятся только на вашем компьютере в ``%APPDATA%\FIDEXE``, интернет не используется.
+
+          **Размер:** $env:SIZE_MB МБ · **SHA256:** ``$env:SHA256``
+          "@
+          $notes | Out-File -Encoding utf8 release-notes.md
+          gh release view v1.0.0 *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create v1.0.0 "dist\FIDEXE.exe" --title "FIDEXE 1.0.0 — Windows exe" --notes-file release-notes.md
+          } else {
+            gh release upload v1.0.0 "dist\FIDEXE.exe" --clobber
+            gh release edit v1.0.0 --notes-file release-notes.md
+          }
