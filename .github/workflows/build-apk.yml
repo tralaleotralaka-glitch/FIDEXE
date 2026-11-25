@@ -49,7 +49,21 @@ jobs:
 
       - name: Build release APK
         working-directory: android
-        run: gradle --no-daemon --stacktrace assembleRelease
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace assembleRelease 2>&1 | tee build.log
+
+      - name: Publish build log to the branch on failure
+        if: failure()
+        run: |
+          if [ -f android/build.log ]; then
+            tail -c 14000 android/build.log > android/build-log.txt
+            git config user.name "ci-bot"
+            git config user.email "ci-bot@fidexe.local"
+            git add android/build-log.txt
+            git commit -m "ci: gradle failure log [skip ci]" || true
+            git push || true
+          fi
 
       - name: Verify APK signature and metadata
         run: |
