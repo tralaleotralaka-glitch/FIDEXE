@@ -27,6 +27,11 @@ jobs:
           pip install pyinstaller
           python -c "import PySide6, PyInstaller; print('PySide6', PySide6.__version__, 'PyInstaller', PyInstaller.__version__)"
 
+      - name: Source smoke test (auth, clipboard, usage, export, themes)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/smoke_test.py
+
       - name: Build single-file exe
         run: pyinstaller --noconfirm --clean build.spec
 
@@ -37,6 +42,16 @@ jobs:
         run: |
           $process = Start-Process -FilePath "dist\FIDEXE.exe" -ArgumentList "--selftest" -PassThru -Wait -NoNewWindow
           if ($process.ExitCode -ne 0) { throw "selftest failed with exit code $($process.ExitCode)" }
+
+      - name: Verify rendered UI screenshots from the frozen app
+        shell: pwsh
+        run: |
+          $shots = Get-ChildItem "$env:APPDATA\FIDEXE\selftest_*.png" -ErrorAction SilentlyContinue
+          if ($shots.Count -lt 4) { throw "expected 4 rendered pages, got $($shots.Count)" }
+          foreach ($shot in $shots) {
+            if ($shot.Length -lt 5000) { throw "page render too small: $($shot.Name) $($shot.Length) bytes" }
+          }
+          $shots | Select-Object Name, Length | Format-Table
 
       - name: Show artifact details
         id: details

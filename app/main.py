@@ -205,6 +205,11 @@ def run_selftest(app: QApplication) -> int:
     window.hide()
     window.deleteLater()
     ctx.shutdown()
+
+    missing = [key for key in PAGE_ORDER if not (data_dir() / f"selftest_{key}.png").exists()]
+    if missing:
+        print("SELFTEST FAILED, pages not rendered:", missing)
+        return 3
     print("SELFTEST OK")
     return 0
 
