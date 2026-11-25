@@ -1,6 +1,9 @@
 name: Android UI screenshots
 
 on:
+  push:
+    paths:
+      - ".github/workflows/android-screens.yml"
   workflow_dispatch:
 
 permissions:
