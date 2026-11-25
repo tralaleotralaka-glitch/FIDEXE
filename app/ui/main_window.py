@@ -165,6 +165,7 @@ class MainWindow(QMainWindow):
 
         ctx.toast.connect(self._on_toast)
         ctx.watcher.captured.connect(self._on_captured)
+        ctx.status_changed.connect(self._on_status_changed)
         self._select("dashboard")
         self.pages["dashboard"].refresh()
 
@@ -368,6 +369,11 @@ class MainWindow(QMainWindow):
         self.toast.show_message(message, kind)
         if kind == "error" and hasattr(self, "pages"):
             pass
+
+    def _on_status_changed(self, active: bool = True) -> None:
+        self._sync_status()
+        if hasattr(self, "pages"):
+            self.pages["dashboard"]._sync_pause_button()
 
     def _on_captured(self, kind: str, text: str, path: str) -> None:
         if self.ctx.settings.get("notify_on_copy", False) and self.tray is not None:
