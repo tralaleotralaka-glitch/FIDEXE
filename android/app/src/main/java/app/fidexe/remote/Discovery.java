@@ -8,6 +8,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import java.net.InetAddress;
+import java.util.List;
 
 /** Finds the FIDEXE desktop on the local network using mDNS (NSD). */
 final class Discovery {
@@ -108,9 +109,9 @@ final class Discovery {
     private static String addressOf(NsdServiceInfo info) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                InetAddress[] addresses = info.getHostAddresses();
-                if (addresses != null && addresses.length > 0) {
-                    return addresses[0].getHostAddress();
+                List<InetAddress> addresses = info.getHostAddresses();
+                if (addresses != null && !addresses.isEmpty()) {
+                    return addresses.get(0).getHostAddress();
                 }
             }
         } catch (Exception ignored) {
