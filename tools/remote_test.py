@@ -1,0 +1,169 @@
+"""End-to-end test of the LAN remote-control API (the Android app speaks this).
+
+    QT_QPA_PLATFORM=offscreen python tools/remote_test.py
+"""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import os
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+TMP = tempfile.mkdtemp(prefix="fidexe-remote-")
+os.environ["XDG_DATA_HOME"] = TMP
+os.environ["APPDATA"] = TMP
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from app.context import AppContext  # noqa: E402
+
+PORT = 47899
+BASE = f"http://127.0.0.1:{PORT}"
+PASSED = 0
+FAILED = 0
+
+
+def check(name: str, condition: bool, detail: str = "") -> None:
+    global PASSED, FAILED
+    if condition:
+        PASSED += 1
+        print(f"  ok   {name}")
+    else:
+        FAILED += 1
+        print(f"  FAIL {name} {detail}")
+
+
+def request(path: str, payload: dict | None = None, token: str = "", method: str | None = None):
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(BASE + path, data=data, method=method or ("POST" if data else "GET"))
+    req.add_header("Content-Type", "application/json")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return response.status, json.loads(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode() or "{}")
+
+
+def derive(password: str, salt_hex: str, iterations: int) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), iterations).hex()
+
+
+def prove(password_hash: str, challenge: str) -> str:
+    return hmac.new(bytes.fromhex(password_hash), challenge.encode(), hashlib.sha256).hexdigest()
+
+
+def main() -> int:
+    app = QApplication(sys.argv)
+    ctx = AppContext()
+    email, password = "phone@fidexe.app", "correct-horse-1"
+    user_id = ctx.auth.register(email, password)
+    ctx.sign_in(user_id, True)
+
+    print("[desktop server]")
+    ctx.settings.set("remote_port", PORT)
+    commands: list[str] = []
+    ctx.remote.action_override = lambda cmd: commands.append(cmd) or True
+    check("server starts", ctx.set_remote_enabled(True))
+    check("status running", ctx.remote.running)
+
+    code, info = request("/api/info")
+    check("info responds", code == 200, str(code))
+    check("masked account", info.get("accounts") == ["ph***@fidexe.app"], str(info.get("accounts")))
+    check("protocol version", info.get("protocol") == 1)
+    check("host name present", bool(info.get("host")))
+
+    code, ping = request("/api/ping")
+    check("ping ok", code == 200 and ping.get("ok") is True)
+
+    print("[authentication]")
+    code, challenge = request("/api/auth/challenge", {"email": email})
+    check("challenge issued", code == 200 and "challenge" in challenge, str(challenge))
+    pw_hash = derive(password, challenge["salt"], challenge["iterations"])
+
+    code, bad = request(
+        "/api/auth/proof",
+        {"email": email, "challenge": challenge["challenge"], "proof": "00" * 32, "device": "Pixel test"},
+    )
+    check("wrong proof rejected", code == 400, str(code))
+
+    code, challenge = request("/api/auth/challenge", {"email": email})
+    pw_hash = derive(password, challenge["salt"], challenge["iterations"])
+    code, auth = request(
+        "/api/auth/proof",
+        {
+            "email": email,
+            "challenge": challenge["challenge"],
+            "proof": prove(pw_hash, challenge["challenge"]),
+            "device": "Pixel 7 (тест)",
+        },
+    )
+    check("correct proof accepted", code == 200 and "token" in auth, str(auth))
+    token = auth.get("token", "")
+    check("token ttl", auth.get("expires_in", 0) > 0)
+
+    code, reused = request(
+        "/api/auth/proof",
+        {
+            "email": email,
+            "challenge": challenge["challenge"],
+            "proof": prove(pw_hash, challenge["challenge"]),
+            "device": "Pixel 7",
+        },
+    )
+    check("challenge is single use", code == 400 and "error" in reused, f"{code} {reused}")
+
+    check("unknown account", request("/api/auth/challenge", {"email": "nobody@x.y"})[0] == 400)
+
+    print("[authorised calls]")
+    code, status = request("/api/status", token=token)
+    check("status authorised", code == 200, str(code))
+    for key in ("today_seconds", "current_app", "top_apps", "clip_count", "paused", "host"):
+        check(f"status has {key}", key in status, str(status.keys()))
+
+    check("no token -> 401", request("/api/status")[0] == 401)
+    check("bad token -> 401", request("/api/status", token="nope")[0] == 401)
+
+    code, result = request("/api/command", {"cmd": "lock"}, token=token)
+    check("lock command accepted", code == 200 and result.get("ok") is True, str(result))
+    check("lock executed once", commands == ["lock"], str(commands))
+    code, result = request("/api/command", {"cmd": "sleep"}, token=token)
+    check("sleep command accepted", code == 200)
+    code, result = request("/api/command", {"cmd": "format_disk"}, token=token)
+    check("unknown command rejected", code == 400, str(code))
+
+    print("[signals]")
+    seen: list[tuple[str, str]] = []
+    ctx.remote.command_done.connect(lambda cmd, dev: seen.append((cmd, dev)))
+    request("/api/command", {"cmd": "pause"}, token=token)
+    app.processEvents()
+    check("signal emitted", ("pause", "Pixel 7 (тест)") in seen, str(seen))
+
+    print("[teardown]")
+    ctx.set_remote_enabled(False)
+    check("server stopped", not ctx.remote.running)
+    try:
+        request("/api/ping")
+        closed = False
+    except urllib.error.URLError:
+        closed = True
+    check("port closed after stop", closed)
+    ctx.shutdown()
+
+    print(f"\n{PASSED} passed, {FAILED} failed")
+    return 1 if FAILED else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

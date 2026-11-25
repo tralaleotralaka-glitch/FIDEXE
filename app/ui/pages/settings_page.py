@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...context import AppContext
-from ...core import autostart
+from ...core import autostart, power, remote
 from ...core.auth import AuthError
 from ...core.exporter import export_json, export_usage_csv
 from ...core.paths import APP_TITLE, APP_VERSION, data_dir
@@ -109,6 +109,7 @@ class SettingsPage(Page):
         self._build_tracking()
         self._build_clipboard()
         self._build_system()
+        self._build_remote()
         self._build_data()
         self._build_about()
         self.v.addStretch(1)
@@ -250,6 +251,103 @@ class SettingsPage(Page):
         card.body.addWidget(
             SettingsRow("Стартовать свёрнутым", "окно не открывается при автозапуске", self.minimized_toggle)
         )
+
+    def _build_remote(self) -> None:
+        card = self._card("Телефон и блокировка", "управление этим компьютером по Wi-Fi", "lock")
+        self.remote_toggle = ToggleSwitch(self.ctx.remote_enabled)
+        self.remote_toggle.toggled.connect(self._on_remote_toggle)
+        card.body.addWidget(
+            SettingsRow(
+                "Разрешить управление с телефона",
+                "приложение FIDEXE Remote на Android сможет блокировать этот ПК в той же Wi-Fi сети",
+                self.remote_toggle,
+            )
+        )
+        card.body.addWidget(hline())
+
+        self.remote_host = QLabel("Не подключено")
+        self.remote_host.setWordWrap(True)
+        self.remote_host.setObjectName("Subtitle")
+        card.body.addWidget(self.remote_host)
+
+        address_row = QHBoxLayout()
+        address_row.setSpacing(8)
+        self.remote_address = QLabel("—")
+        self.remote_address.setObjectName("Mono")
+        self.remote_address.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        address_row.addWidget(self.remote_address)
+        self.copy_address = QPushButton("Скопировать адрес")
+        self.copy_address.setCursor(Qt.PointingHandCursor)
+        self.copy_address.clicked.connect(self._copy_address)
+        address_row.addWidget(self.copy_address)
+        self.lock_test = QPushButton("Заблокировать сейчас")
+        self.lock_test.setCursor(Qt.PointingHandCursor)
+        self.lock_test.clicked.connect(self._lock_now)
+        address_row.addWidget(self.lock_test)
+        address_row.addStretch(1)
+        card.body.addLayout(address_row)
+
+        self.remote_hint = QLabel("")
+        self.remote_hint.setObjectName("Faint")
+        self.remote_hint.setWordWrap(True)
+        card.body.addWidget(self.remote_hint)
+
+        self._remote_timer = QTimer(self)
+        self._remote_timer.setInterval(5000)
+        self._remote_timer.timeout.connect(self._refresh_remote)
+        self._remote_timer.start()
+        self._refresh_remote()
+
+    def _refresh_remote(self) -> None:
+        running = self.ctx.remote.running
+        self.copy_address.setEnabled(running)
+        if running:
+            self.remote_address.setText(self.ctx.remote.address)
+            self.remote_host.setText(
+                f"Компьютер: {remote.hostname()} · подключённых телефонов: {self.ctx.remote.session_count()}"
+            )
+        else:
+            self.remote_address.setText("—")
+            self.remote_host.setText("Сервер выключен")
+        if not power.lock_supported():
+            self.remote_hint.setText("Блокировка работает только в Windows.")
+            self.lock_test.setEnabled(False)
+        elif not [e for e in self.ctx.store.emails() if not e.startswith("guest@")]:
+            self.remote_hint.setText(
+                "Сначала войдите по почте (не гостем) — телефон авторизуется той же почтой и паролем, "
+                "что и на ноутбуке."
+            )
+        else:
+            self.remote_hint.setText(
+                "Телефон и ноутбук должны быть в одной Wi-Fi сети. Пароль не передаётся: телефон "
+                "доказывает знание пароля HMAC-подписью, сервер работает только в локальной сети."
+            )
+
+    def _on_remote_toggle(self, enabled: bool) -> None:
+        ok = self.ctx.set_remote_enabled(enabled)
+        if enabled and not ok:
+            self.remote_toggle.setChecked(False)
+            self.ctx.toast.emit("Не удалось открыть порт 47811 — возможно, он занят", "error")
+        elif enabled:
+            self.ctx.toast.emit("Управление с телефона включено", "ok")
+        else:
+            self.ctx.toast.emit("Управление с телефона выключено", "ok")
+        self._refresh_remote()
+
+    def _copy_address(self) -> None:
+        if not self.ctx.remote.running:
+            return
+        from PySide6.QtGui import QGuiApplication
+
+        QGuiApplication.clipboard().setText(self.ctx.remote.address)
+        self.ctx.toast.emit("Адрес скопирован", "ok")
+
+    def _lock_now(self) -> None:
+        if not power.lock_supported():
+            self.ctx.toast.emit("Блокировка доступна только в Windows", "warn")
+            return
+        self.ctx.toast.emit("Блокирую компьютер…", "warn")
+        QTimer.singleShot(400, power.lock_workstation)
 
     def _build_data(self) -> None:
         card = self._card("Данные", "", "shield")

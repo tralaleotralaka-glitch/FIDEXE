@@ -1,0 +1,65 @@
+name: Build FIDEXE Remote APK
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "android/**"
+      - ".github/workflows/build-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build release APK
+        working-directory: android
+        run: gradle --no-daemon --stacktrace assembleRelease
+
+      - name: Verify APK signature and metadata
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          ls -la "$(dirname "$APK")"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt2" dump badging "$APK" | head -6
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIDEXE-Remote-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish APK release
+        if: github.ref_name == 'arena/e4167a20-fidexe'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk FIDEXE-Remote-1.0.0.apk
+          sha256sum FIDEXE-Remote-1.0.0.apk
+          gh release view android-v1.0.0 > /dev/null 2>&1 || \
+            gh release create android-v1.0.0 --title "FIDEXE Remote 1.0.0 — Android" --notes-file android/RELEASE_NOTES.md
+          gh release upload android-v1.0.0 FIDEXE-Remote-1.0.0.apk --clobber
+          gh release edit android-v1.0.0 --notes-file android/RELEASE_NOTES.md

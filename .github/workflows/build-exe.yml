@@ -32,6 +32,11 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python tools/smoke_test.py
 
+      - name: LAN remote-control API test (Android protocol)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/remote_test.py
+
       - name: Build single-file exe
         run: pyinstaller --noconfirm --clean build.spec
 
@@ -81,7 +86,7 @@ jobs:
           SHA256: ${{ steps.details.outputs.sha256 }}
         run: |
           $notes = @"
-          **FIDEXE 1.0.0** — история буфера обмена и статистика приложений для Windows 10/11.
+          **FIDEXE 1.1.0** — история буфера обмена и статистика приложений для Windows 10/11.
 
           ### Как запустить
           1. Скачайте `FIDEXE.exe` ниже.
@@ -93,17 +98,18 @@ jobs:
           - история буфера обмена: текст, ссылки, код, изображения, поиск, закрепление, экспорт;
           - статистика приложений: время в фокусе по дням, топ приложений, ритм дня;
           - локальный вход по почте (PBKDF2-SHA256), гостевой режим;
-          - тёмная и светлая темы, автозапуск, трей, горячие клавиши.
+          - тёмная и светлая темы, автозапуск, трей, горячие клавиши;
+          - управление с телефона: блокировка компьютера из Android-приложения по Wi-Fi.
 
           Данные хранятся только на вашем компьютере в ``%APPDATA%\FIDEXE``, интернет не используется.
 
           **Размер:** $env:SIZE_MB МБ · **SHA256:** ``$env:SHA256``
           "@
           $notes | Out-File -Encoding utf8 release-notes.md
-          gh release view v1.0.0 *> $null
+          gh release view v1.1.0 *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create v1.0.0 "dist\FIDEXE.exe" --title "FIDEXE 1.0.0 — Windows exe" --notes-file release-notes.md
+            gh release create v1.1.0 "dist\FIDEXE.exe" --title "FIDEXE 1.1.0 — Windows exe" --notes-file release-notes.md
           } else {
-            gh release upload v1.0.0 "dist\FIDEXE.exe" --clobber
-            gh release edit v1.0.0 --notes-file release-notes.md
+            gh release upload v1.1.0 "dist\FIDEXE.exe" --clobber
+            gh release edit v1.1.0 --notes-file release-notes.md
           }

@@ -21,6 +21,8 @@ DEFAULTS: dict[str, Any] = {
     "prune_days": 120,            # drop usage details older than this
     "session_user": 0,            # remembered user id (0 = signed out)
     "notify_on_copy": False,
+    "remote_enabled": False,      # LAN control endpoint for the Android app
+    "remote_port": 47811,
 }
 
 
