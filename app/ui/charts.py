@@ -216,6 +216,15 @@ class AreaChart(_ChartBase):
         area = self._area()
         if len(self.values) < 2:
             return
+        if not any(self.values):
+            painter.setPen(QColor(p["faint"]))
+            painter.setFont(self._font(11))
+            painter.drawText(
+                QRectF(area.left(), area.center().y() - 10, area.width(), 20),
+                Qt.AlignCenter,
+                "нет активности за выбранный период",
+            )
+            return
         points = self._points()
 
         path = QPainterPath(points[0])

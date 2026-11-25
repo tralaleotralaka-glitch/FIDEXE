@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
+    QMessageBox,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
@@ -24,7 +26,7 @@ from .pages.clipboard_page import ClipboardPage
 from .pages.dashboard import DashboardPage
 from .pages.settings_page import SettingsPage
 from .pages.stats_page import StatsPage
-from .widgets import Avatar, SidebarButton
+from .widgets import Avatar, IconButton, SidebarButton
 
 NAV = [
     ("dashboard", "Обзор", "grid"),
@@ -200,9 +202,9 @@ class MainWindow(QMainWindow):
         title.setStyleSheet("font-size: 16px; font-weight: 800; letter-spacing: 1.5px;")
         brand.addWidget(title)
         brand.addStretch(1)
-        version = QLabel(f"v{APP_VERSION}")
-        version.setObjectName("Faint")
-        brand.addWidget(version)
+        self.menu_button = IconButton("chevron-down", "Меню приложения", self.p["muted"], 16)
+        self.menu_button.clicked.connect(self._show_menu)
+        brand.addWidget(self.menu_button)
         layout.addLayout(brand)
         layout.addSpacing(18)
 
@@ -269,6 +271,95 @@ class MainWindow(QMainWindow):
 
         self._sync_status()
         return sidebar
+
+    # ------------------------------------------------------------- app menu
+    def _build_menu(self) -> QMenu:
+        menu = QMenu(self)
+        for idx, (key, label, _icon) in enumerate(NAV, start=1):
+            action = QAction(f"{label}\tCtrl+{idx}", menu)
+            action.triggered.connect(lambda checked=False, k=key: self._select(k))
+            menu.addAction(action)
+        menu.addSeparator()
+
+        self.menu_pause = QAction("Пауза трекинга", menu)
+        self.menu_pause.triggered.connect(self._toggle_pause)
+        menu.addAction(self.menu_pause)
+
+        theme_menu = menu.addMenu("Тема оформления")
+        group = QActionGroup(theme_menu)
+        for key, label in (("dark", "Тёмная"), ("light", "Светлая")):
+            action = QAction(label, theme_menu, checkable=True)
+            action.setChecked(self.ctx.settings.get("theme", "dark") == key)
+            action.triggered.connect(lambda checked=False, k=key: self.ctx.set_theme(k))
+            group.addAction(action)
+            theme_menu.addAction(action)
+        menu.addSeparator()
+
+        export_action = QAction("Экспорт данных (JSON)…", menu)
+        export_action.triggered.connect(self._export_json)
+        menu.addAction(export_action)
+
+        folder_action = QAction("Открыть папку данных", menu)
+        folder_action.triggered.connect(self._open_data_folder)
+        menu.addAction(folder_action)
+        menu.addSeparator()
+
+        about_action = QAction(f"О FIDEXE {APP_VERSION}", menu)
+        about_action.triggered.connect(self._show_about)
+        menu.addAction(about_action)
+
+        quit_action = QAction("Выход", menu)
+        quit_action.triggered.connect(self._quit)
+        menu.addAction(quit_action)
+        return menu
+
+    def _show_menu(self) -> None:
+        if not hasattr(self, "_menu"):
+            self._menu = self._build_menu()
+        self._sync_status()
+        self._menu.popup(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
+
+    def _export_json(self) -> None:
+        from datetime import datetime
+        from pathlib import Path
+
+        from ..core.exporter import export_json
+
+        default = f"fidexe_export_{datetime.now():%Y%m%d_%H%M}.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Экспорт данных", default, "JSON (*.json)")
+        if not path:
+            return
+        try:
+            count = export_json(self.ctx.store, self.ctx.user_id, Path(path), self.ctx.email)
+            self._on_toast(f"Экспортировано записей: {count}", "ok")
+        except OSError as exc:
+            self._on_toast(f"Ошибка экспорта: {exc}", "error")
+
+    def _open_data_folder(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from ..core.paths import data_dir
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_dir())))
+
+    def _show_about(self) -> None:
+        from ..core.paths import APP_TAGLINE, data_dir
+
+        box = QMessageBox(self)
+        box.setWindowTitle(f"О {APP_TITLE}")
+        box.setTextFormat(Qt.RichText)
+        box.setText(
+            f"<b>{APP_TITLE} {APP_VERSION}</b><br>{APP_TAGLINE}<br><br>"
+            "Полностью офлайн: история буфера и статистика хранятся только на этом компьютере."
+        )
+        box.setInformativeText(
+            f"Папка данных: {data_dir()}\n\n"
+            "Горячие клавиши: Ctrl+1…4 — разделы, Ctrl+F — поиск по буферу, "
+            "Ctrl+Shift+P — пауза трекинга, Esc — свернуть в трей."
+        )
+        box.setStandardButtons(QMessageBox.Ok)
+        box.exec()
 
     # ---------------------------------------------------------------- tray
     def _build_tray(self) -> None:
@@ -344,6 +435,8 @@ class MainWindow(QMainWindow):
         self.pause_button.style().polish(self.pause_button)
         if self.tray is not None:
             self.tray_pause.setText("Продолжить трекинг" if paused else "Пауза трекинга")
+        if hasattr(self, "_menu"):
+            self.menu_pause.setText("Продолжить трекинг" if paused else "Пауза трекинга")
 
     def _toggle_pause(self) -> None:
         paused = not bool(self.ctx.settings.get("tracking_paused", False))
