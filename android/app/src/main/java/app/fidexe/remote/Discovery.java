@@ -91,13 +91,13 @@ final class Discovery {
                     if (ip == null) {
                         return;
                     }
-                    String name = serviceInfo.getServiceName();
-                    if (name != null && name.startsWith("FIDEXE-")) {
-                        name = name.substring("FIDEXE-".length());
-                    }
+                    String rawName = serviceInfo.getServiceName();
+                    final String displayName = rawName != null && rawName.startsWith("FIDEXE-")
+                            ? rawName.substring("FIDEXE-".length())
+                            : (rawName == null ? "" : rawName);
                     found = true;
-                    String address = ip + ":" + serviceInfo.getPort();
-                    handler.post(() -> listener.onFound(name, address));
+                    final String address = ip + ":" + serviceInfo.getPort();
+                    handler.post(() -> listener.onFound(displayName, address));
                 }
             });
         } catch (Exception ignored) {
