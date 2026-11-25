@@ -54,7 +54,7 @@ jobs:
           gradle --no-daemon --stacktrace assembleRelease 2>&1 | tee build.log
 
       - name: Publish build log to the branch on failure
-        if: failure()
+        if: failure() && github.event_name == 'workflow_dispatch'
         run: |
           if [ -f android/build.log ]; then
             {

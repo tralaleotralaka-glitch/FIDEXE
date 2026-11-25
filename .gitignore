@@ -11,3 +11,6 @@ build/*
 .idea/
 .vscode/
 .DS_Store
+android/build-log.txt
+android/*/build.log
+android/build.log
