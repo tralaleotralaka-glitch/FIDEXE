@@ -131,6 +131,13 @@ def main() -> int:
             app.processEvents()
         window.grab().save(str(OUT / f"{page_key}.png"))
 
+    # the phone card sits lower on the settings page: scroll it into view
+    settings = window.pages["settings"]
+    settings.ensureWidgetVisible(settings.pair_code)
+    for _ in range(3):
+        app.processEvents()
+    window.grab().save(str(OUT / "settings-phone.png"))
+
     # light theme variant of the dashboard
     theme.set_current("light")
     app.setStyleSheet(theme.build_stylesheet(theme.CURRENT))
@@ -140,11 +147,11 @@ def main() -> int:
     light._select("dashboard")
     for _ in range(3):
         app.processEvents()
-    light.grab().save(str(OUT / "dashboard_light.png"))
+    light.grab().save(str(OUT / "dashboard-light.png"))
     light._select("stats")
     for _ in range(3):
         app.processEvents()
-    light.grab().save(str(OUT / "stats_light.png"))
+    light.grab().save(str(OUT / "stats-light.png"))
 
     ctx.set_remote_enabled(False)
     print("saved to", OUT)
