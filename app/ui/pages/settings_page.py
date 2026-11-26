@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...context import AppContext
-from ...core import autostart, power, remote
+from ...core import autostart, remote
 from ...core.auth import AuthError
 from ...core.exporter import export_json, export_usage_csv
 from ...core.paths import APP_TITLE, APP_VERSION, data_dir
@@ -253,194 +253,43 @@ class SettingsPage(Page):
         )
 
     def _build_remote(self) -> None:
-        card = self._card("Телефон и блокировка", "управление этим компьютером по Wi-Fi", "lock")
-        self.remote_toggle = ToggleSwitch(self.ctx.remote_enabled)
-        self.remote_toggle.toggled.connect(self._on_remote_toggle)
-        card.body.addWidget(
-            SettingsRow(
-                "Разрешить управление с телефона",
-                "приложение FIDEXE Remote на Android сможет блокировать этот ПК в той же Wi-Fi сети",
-                self.remote_toggle,
-            )
-        )
-        card.body.addWidget(hline())
+        card = self._card("Телефон", "введите эти 6 цифр в FIDEXE Remote на Android", "lock")
 
-        self.remote_host = QLabel("Не подключено")
-        self.remote_host.setWordWrap(True)
-        self.remote_host.setObjectName("Subtitle")
-        card.body.addWidget(self.remote_host)
-
-        address_row = QHBoxLayout()
-        address_row.setSpacing(8)
-        self.remote_address = QLabel("—")
-        self.remote_address.setObjectName("Mono")
-        self.remote_address.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        address_row.addWidget(self.remote_address)
-        self.copy_address = QPushButton("Скопировать адрес")
-        self.copy_address.setCursor(Qt.PointingHandCursor)
-        self.copy_address.clicked.connect(self._copy_address)
-        address_row.addWidget(self.copy_address)
-        self.lock_test = QPushButton("Заблокировать сейчас")
-        self.lock_test.setCursor(Qt.PointingHandCursor)
-        self.lock_test.clicked.connect(self._lock_now)
-        address_row.addWidget(self.lock_test)
-        address_row.addStretch(1)
-        card.body.addLayout(address_row)
-
-        card.body.addWidget(hline())
-        code_row = QHBoxLayout()
-        code_row.setSpacing(14)
-
-        code_box = QVBoxLayout()
-        code_box.setSpacing(2)
-        code_caption = QLabel("Код для телефона")
-        code_caption.setStyleSheet("font-size: 12px; font-weight: 700;")
-        code_box.addWidget(code_caption)
         self.pair_code = QLabel("— — —")
+        self.pair_code.setAlignment(Qt.AlignCenter)
         self.pair_code.setStyleSheet(
             f"font-family: 'Cascadia Mono','Consolas','DejaVu Sans Mono',monospace;"
-            f" font-size: 34px; font-weight: 800; letter-spacing: 6px; color: {self.p['accent']};"
+            f" font-size: 48px; font-weight: 800; letter-spacing: 10px; color: {self.p['accent']};"
+            f" padding: 10px 0 2px 0;"
         )
         self.pair_code.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        code_box.addWidget(self.pair_code)
-        self.pair_timer = QLabel("")
-        self.pair_timer.setObjectName("Faint")
-        code_box.addWidget(self.pair_timer)
-        code_row.addLayout(code_box)
-        code_row.addStretch(1)
+        card.body.addWidget(self.pair_code)
 
-        self.copy_code = QPushButton("Скопировать код")
-        self.copy_code.setCursor(Qt.PointingHandCursor)
-        self.copy_code.clicked.connect(self._copy_code)
-        code_row.addWidget(self.copy_code, 0, Qt.AlignVCenter)
-        card.body.addLayout(code_row)
-
-        card.body.addWidget(hline())
-        self.camera_toggle = ToggleSwitch(bool(self.ctx.settings.get("camera_allowed", False)))
-        self.camera_toggle.toggled.connect(self._on_camera_toggle)
-        card.body.addWidget(
-            SettingsRow(
-                "Камера с телефона",
-                "телефон сможет смотреть веб-камеру этого ПК, пока переключатель включён",
-                self.camera_toggle,
-            )
-        )
-        self.camera_hint = QLabel("")
-        self.camera_hint.setObjectName("Faint")
-        self.camera_hint.setWordWrap(True)
-        card.body.addWidget(self.camera_hint)
-
-        self.remote_hint = QLabel("")
-        self.remote_hint.setObjectName("Faint")
-        self.remote_hint.setWordWrap(True)
-        card.body.addWidget(self.remote_hint)
-
-        self._remote_timer = QTimer(self)
-        self._remote_timer.setInterval(5000)
-        self._remote_timer.timeout.connect(self._refresh_remote)
-        self._remote_timer.start()
+        self.pair_hint = QLabel("")
+        self.pair_hint.setObjectName("Subtitle")
+        self.pair_hint.setAlignment(Qt.AlignCenter)
+        self.pair_hint.setWordWrap(True)
+        card.body.addWidget(self.pair_hint)
 
         self._code_timer = QTimer(self)
         self._code_timer.setInterval(1000)
         self._code_timer.timeout.connect(self._refresh_pair_code)
         self._code_timer.start()
-        self._refresh_remote()
         self._refresh_pair_code()
 
     def _refresh_pair_code(self) -> None:
+        if not self.ctx.user_id:
+            self.pair_code.setText("— — —")
+            self.pair_hint.setText("Войдите в аккаунт по почте — код появится здесь")
+            return
         if not self.ctx.remote.running:
             self.pair_code.setText("— — —")
-            self.pair_timer.setText("включите управление с телефона, чтобы получить код")
-            self.copy_code.setEnabled(False)
+            self.pair_hint.setText("Сервер для телефона не запустился: возможно, порт 47811 занят")
             return
         current = self.ctx.remote.pair_code()
         self.pair_code.setText(remote.format_pair_code(current))
         left = self.ctx.remote.pair_remaining()
-        self.pair_timer.setText(f"новый код через {left} с · действует только с этим ноутбуком")
-        self.copy_code.setEnabled(True)
-
-    def _copy_code(self) -> None:
-        if not self.ctx.remote.running:
-            return
-        from PySide6.QtGui import QGuiApplication
-
-        QGuiApplication.clipboard().setText(self.ctx.remote.pair_code())
-        self.ctx.toast.emit("Код скопирован", "ok")
-
-    def _refresh_remote(self) -> None:
-        running = self.ctx.remote.running
-        self.copy_address.setEnabled(running)
-        if running:
-            self.remote_address.setText(self.ctx.remote.address)
-            self.remote_host.setText(
-                f"Компьютер: {remote.hostname()} · подключённых телефонов: {self.ctx.remote.session_count()}"
-            )
-        else:
-            self.remote_address.setText("—")
-            self.remote_host.setText("Сервер выключен")
-        camera_supported = bool(getattr(self.ctx.camera, "supported", False))
-        if not camera_supported:
-            self.camera_toggle.setEnabled(False)
-            self.camera_hint.setText(
-                "Камера недоступна: в этой сборке нет модуля opencv — скачайте FIDEXE.exe с сайта релиза."
-            )
-        elif self.ctx.settings.get("camera_allowed", False):
-            self.camera_hint.setText(
-                "Камера включается только по запросу с телефона и гаснет через 25 секунд после "
-                "последнего кадра. Индикатор камеры на ноутбуке при этом горит."
-            )
-        else:
-            self.camera_hint.setText(
-                "Пока переключатель выключен, телефон получает отказ — это защита от случайного просмотра."
-            )
-        if not power.lock_supported():
-            self.remote_hint.setText("Блокировка работает только в Windows.")
-            self.lock_test.setEnabled(False)
-        elif not [e for e in self.ctx.store.emails() if not e.startswith("guest@")]:
-            self.remote_hint.setText(
-                "Сначала войдите по почте (не гостем): телефон подключается шестизначным кодом "
-                "к тому аккаунту, который открыт на ноутбуке."
-            )
-        else:
-            self.remote_hint.setText(
-                "Введите эти 6 цифр в приложении FIDEXE Remote на Android — откроется пульт этого "
-                "ноутбука. Код действует минуту и работает только в вашей Wi-Fi сети; на телефоне "
-                "есть и вход по почте с паролем."
-            )
-
-    def _on_camera_toggle(self, enabled: bool) -> None:
-        self.ctx.settings.set("camera_allowed", bool(enabled))
-        if enabled:
-            self.ctx.toast.emit("Камера доступна телефону", "ok")
-        else:
-            self.ctx.toast.emit("Доступ к камере с телефона выключен", "ok")
-        self._refresh_remote()
-
-    def _on_remote_toggle(self, enabled: bool) -> None:
-        ok = self.ctx.set_remote_enabled(enabled)
-        if enabled and not ok:
-            self.remote_toggle.setChecked(False)
-            self.ctx.toast.emit("Не удалось открыть порт 47811 — возможно, он занят", "error")
-        elif enabled:
-            self.ctx.toast.emit("Управление с телефона включено", "ok")
-        else:
-            self.ctx.toast.emit("Управление с телефона выключено", "ok")
-        self._refresh_remote()
-
-    def _copy_address(self) -> None:
-        if not self.ctx.remote.running:
-            return
-        from PySide6.QtGui import QGuiApplication
-
-        QGuiApplication.clipboard().setText(self.ctx.remote.address)
-        self.ctx.toast.emit("Адрес скопирован", "ok")
-
-    def _lock_now(self) -> None:
-        if not power.lock_supported():
-            self.ctx.toast.emit("Блокировка доступна только в Windows", "warn")
-            return
-        self.ctx.toast.emit("Блокирую компьютер…", "warn")
-        QTimer.singleShot(400, power.lock_workstation)
+        self.pair_hint.setText(f"Новый код через {left} с · ноутбук и телефон в одной Wi-Fi сети")
 
     def _build_data(self) -> None:
         card = self._card("Данные", "", "shield")

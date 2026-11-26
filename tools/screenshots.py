@@ -109,9 +109,7 @@ def main() -> int:
     theme.set_current("dark")
     app.setStyleSheet(theme.build_stylesheet(theme.CURRENT))
     ctx.sign_in(user_id, True)
-    # the settings page shows the real rotating phone code, so turn the LAN server on
-    ctx.settings.set("remote_port", 47898)
-    ctx.set_remote_enabled(True)
+    # signing in already starts the LAN server, so the real rotating code is rendered
     latest = ctx.store.latest_usage(user_id)
     if latest:
         ctx.tracker.changed.emit(latest["process"], latest["title"] or "")
@@ -131,10 +129,9 @@ def main() -> int:
             app.processEvents()
         window.grab().save(str(OUT / f"{page_key}.png"))
 
-    # the phone card sits lower on the settings page: scroll it into view,
-    # anchoring on the last row so the code and the camera switch are both visible
+    # the code card sits lower on the settings page: scroll it into view
     settings = window.pages["settings"]
-    settings.ensureWidgetVisible(settings.camera_hint, 0, 40)
+    settings.ensureWidgetVisible(settings.pair_hint, 0, 40)
     for _ in range(3):
         app.processEvents()
     window.grab().save(str(OUT / "settings-phone.png"))

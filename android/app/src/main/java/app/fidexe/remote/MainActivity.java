@@ -209,7 +209,7 @@ public class MainActivity extends Activity {
         // ---- pairing code card
         LinearLayout codeCard = card();
         codeCard.addView(sectionTitle("Код с ноутбука"));
-        codeCard.addView(text("FIDEXE на ноутбуке → Настройки → «Телефон и блокировка». "
+        codeCard.addView(text("FIDEXE на ноутбуке → Настройки → «Телефон». "
                 + "Шесть цифр меняются каждую минуту.", MUTED, 12, false), lpm(-1, -2, 6));
         codeField = field("000 000", InputType.TYPE_CLASS_NUMBER);
         codeField.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
@@ -244,7 +244,7 @@ public class MainActivity extends Activity {
 
         container.addView(text("Работает только в локальной сети: данные идут напрямую с телефона "
                 + "на ноутбук, интернет не нужен.", FAINT, 11, false), lpm(-1, -2, 16));
-        container.addView(text("FIDEXE Remote 2.0.0", FAINT, 11, false), lpm(-1, -2, 8));
+        container.addView(text("FIDEXE Remote 2.1.0", FAINT, 11, false), lpm(-1, -2, 8));
     }
 
     private void startDiscovery() {
@@ -267,8 +267,8 @@ public class MainActivity extends Activity {
             public void onFinished() {
                 discoverButton.setEnabled(true);
                 if (foundBox.getChildCount() == 0) {
-                    foundBox.addView(text("Ноутбук не найден. Проверьте, что включено «Управление с телефона» "
-                            + "в настройках FIDEXE и устройства в одной Wi-Fi сети.", MUTED, 12, false));
+                    foundBox.addView(text("Ноутбук не найден. Проверьте, что FIDEXE запущен и вы вошли "
+                            + "в аккаунт по почте, а устройства в одной Wi-Fi сети.", MUTED, 12, false));
                 }
             }
 
@@ -975,12 +975,12 @@ public class MainActivity extends Activity {
         AlertDialog.Builder builder = new AlertDialog.Builder(
                 this, android.R.style.Theme_Material_Dialog_Alert);
         builder.setTitle("Как это работает");
-        builder.setMessage("1. На ноутбуке откройте FIDEXE → Настройки → «Телефон и блокировка» "
-                + "и включите управление.\n\n"
+        builder.setMessage("1. Запустите FIDEXE на ноутбуке и войдите по почте — сервер для телефона "
+                + "стартует сам.\n\n"
                 + "2. Телефон и ноутбук должны быть в одной Wi-Fi сети.\n\n"
                 + "3. На телефоне нажмите «Найти ноутбук в Wi-Fi» или введите адрес "
                 + "вида 192.168.1.10:47811.\n\n"
-                + "4. На ноутбуке: Настройки → «Телефон и блокировка» — там шесть цифр, "
+                + "4. На ноутбуке: Настройки → «Телефон» — там шесть цифр, "
                 + "они меняются каждую минуту.\n\n"
                 + "5. Введите эти цифры на телефоне и нажмите «Войти по коду» — откроется пульт. "
                 + "Можно войти и почтой с паролем того же аккаунта.\n\n"

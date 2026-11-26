@@ -41,7 +41,7 @@ class AppContext(QObject):
             self._remote_status,
             account_provider=lambda: self.user_id,
             camera=self.camera,
-            camera_allowed=lambda: bool(self.settings.get("camera_allowed", False)),
+            camera_allowed=lambda: True,
             apps_provider=processes.list_apps,
             app_closer=processes.close_app if processes.supported() else None,
         )
@@ -58,6 +58,8 @@ class AppContext(QObject):
         self.settings.set("session_user", user_id if remember else 0)
         self.store.prune_clips(user_id, int(self.settings.get("history_limit", 500)))
         self.store.prune_usage(user_id, int(self.settings.get("prune_days", 120)))
+        # the phone only needs the rotating code, so the LAN server is always up
+        self.start_remote()
         self.session_changed.emit(user_id)
 
     def sign_out(self) -> None:
@@ -65,6 +67,7 @@ class AppContext(QObject):
         self.watcher.user_id = 0
         self.tracker.set_user(0)
         self.settings.set("session_user", 0)
+        self.stop_remote()
         self.session_changed.emit(0)
 
     @property
@@ -99,20 +102,18 @@ class AppContext(QObject):
 
     @property
     def remote_enabled(self) -> bool:
-        return bool(self.settings.get("remote_enabled", False))
+        return self.remote.running
 
     def start_remote(self) -> bool:
         if self.remote.running:
             return True
-        ok = self.remote.start(int(self.settings.get("remote_port", 47811)))
-        self.settings.set("remote_enabled", ok)
-        return ok
+        return self.remote.start(int(self.settings.get("remote_port", 47811)))
 
     def stop_remote(self) -> None:
         self.remote.stop()
-        self.settings.set("remote_enabled", False)
 
     def set_remote_enabled(self, enabled: bool) -> bool:
+        """Kept for scripts and tests; the app now starts the server by itself."""
         if enabled:
             return self.start_remote()
         self.stop_remote()

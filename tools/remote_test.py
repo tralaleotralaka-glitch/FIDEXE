@@ -87,6 +87,8 @@ def main() -> int:
     ctx.sign_in(user_id, True)
 
     print("[desktop server]")
+    check("server starts together with the account", ctx.remote.running)
+    ctx.stop_remote()
     ctx.settings.set("remote_port", PORT)
     commands: list[str] = []
     ctx.remote.action_override = lambda cmd: commands.append(cmd) or True
@@ -242,9 +244,9 @@ def main() -> int:
     check("camera needs auth", request("/api/camera/info")[0] == 401)
     code, info_cam = request("/api/camera/info", token=token)
     check("camera info responds", code == 200 and "allowed" in info_cam, str(info_cam))
-    check("camera off by default", info_cam.get("allowed") is False, str(info_cam))
-    status, _ctype, body = request_raw("/api/camera/frame", token=token)
-    check("frame refused while disabled", status == 403, str(status))
+    check("camera allowed right after sign-in", info_cam.get("allowed") is True, str(info_cam))
+    status, _ctype, _body = request_raw("/api/camera/frame", token=token)
+    check("frame errors cleanly without a webcam", status == 403, str(status))
 
     class FakeCamera:
         supported = True
@@ -258,10 +260,9 @@ def main() -> int:
         def stop(self) -> None:
             pass
 
-    ctx.settings.set("camera_allowed", True)
     ctx.remote.camera = FakeCamera()
     code, info_cam = request("/api/camera/info", token=token)
-    check("camera allowed after the switch", info_cam.get("allowed") is True, str(info_cam))
+    check("camera stays allowed", info_cam.get("allowed") is True, str(info_cam))
     check("camera reports resolution", info_cam.get("width") == 640 and info_cam.get("height") == 480)
     status, ctype, body = request_raw("/api/camera/frame", token=token)
     check("frame delivered", status == 200 and ctype.startswith("image/jpeg"), f"{status} {ctype}")

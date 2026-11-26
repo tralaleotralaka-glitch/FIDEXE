@@ -450,9 +450,7 @@ class RemoteControl(QObject):
 
     def camera_frame(self) -> bytes:
         if self.camera is None or not self.camera_enabled:
-            raise RemoteError(
-                "Просмотр камеры выключен: включите «Разрешить камеру» в настройках FIDEXE на ноутбуке"
-            )
+            raise RemoteError("Камера недоступна: на ноутбуке не запустился захват видео")
         try:
             return self.camera.snapshot()
         except CameraUnavailable as exc:
