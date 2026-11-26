@@ -46,7 +46,7 @@ jobs:
           cp /tmp/shots/*.png docs/screenshots/
           git config user.name "ci-bot"
           git config user.email "ci-bot@fidexe.local"
-          git add -A
+          git add docs/screenshots
           git commit -m "docs: regenerate desktop screenshots [skip ci]" || echo "nothing to commit"
           for attempt in 1 2 3 4; do
             git pull --rebase --quiet origin "${GITHUB_REF_NAME}" || true
