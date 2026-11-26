@@ -93,10 +93,16 @@ jobs:
           } > screens-log.md || true
           git config user.name "ci-bot"
           git config user.email "ci-bot@fidexe.local"
-          git add -f screens-log.md
+          git add -A
           git commit -m "ci: android UI test log [skip ci]" || echo "nothing to commit"
-          timeout 60 git pull --rebase --quiet origin "${GITHUB_REF_NAME}" || true
-          timeout 120 git push || true
+          for attempt in 1 2 3 4; do
+            git pull --rebase --quiet origin "${GITHUB_REF_NAME}" || true
+            if timeout 90 git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "pushed on attempt ${attempt}"
+              break
+            fi
+            sleep 10
+          done
 
       - name: Commit screenshots
         run: |
