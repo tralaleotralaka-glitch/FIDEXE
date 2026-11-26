@@ -3,6 +3,7 @@
     python tools/android_ui.py shot out.png
     python tools/android_ui.py tap-edit 0
     python tools/android_ui.py tap-text "Подключиться"
+    python tools/android_ui.py tap-exact "Закрыть"
     python tools/android_ui.py type "10.0.2.2:47811"
     python tools/android_ui.py dump
 """
@@ -83,6 +84,26 @@ def find_text(fragment: str):
     return None
 
 
+def find_exact(text: str):
+    """Node whose visible text is exactly `text` (buttons, not hints that quote them)."""
+    for node in nodes():
+        if node["text"].strip().lower() == text.strip().lower():
+            return node
+    return None
+
+
+def tap_exact(text: str, attempts: int = 4) -> bool:
+    for _ in range(attempts):
+        node = find_exact(text)
+        if node is not None:
+            x, y = node["center"]
+            tap(x, y)
+            time.sleep(0.8)
+            return True
+        scroll_up()
+    return False
+
+
 def tap_text(fragment: str, attempts: int = 5) -> bool:
     for attempt in range(attempts):
         node = find_text(fragment)
@@ -131,6 +152,10 @@ def main() -> int:
     elif command == "tap-text":
         ok = tap_text(argument)
         print("tap-text", argument, "ok" if ok else "NOT FOUND")
+        return hygiene(ok)
+    elif command == "tap-exact":
+        ok = tap_exact(argument)
+        print("tap-exact", argument, "ok" if ok else "NOT FOUND")
         return hygiene(ok)
     elif command == "type":
         escaped = argument.replace(" ", "%s")

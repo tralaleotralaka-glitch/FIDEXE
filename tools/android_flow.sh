@@ -60,7 +60,7 @@ echo "== running apps on the laptop =="
 python3 tools/android_ui.py tap-text "Приложения" || step_failed "open apps"
 sleep 3
 take_shot apps.png
-python3 tools/android_ui.py tap-text "Закрыть" || step_failed "close an app"
+python3 tools/android_ui.py tap-exact "Закрыть" || step_failed "close an app"
 sleep 3
 take_shot apps-closed.png
 adb shell input keyevent 4   # back to the control panel
@@ -70,7 +70,7 @@ echo "== laptop camera =="
 python3 tools/android_ui.py tap-text "Камера ноутбука" || step_failed "open camera"
 sleep 4
 take_shot camera.png
-python3 tools/android_ui.py tap-text "Стоп" || step_failed "stop camera"
+python3 tools/android_ui.py tap-exact "Стоп" || step_failed "stop camera"
 sleep 2
 
 echo "== lock the laptop =="
