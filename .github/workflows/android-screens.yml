@@ -62,35 +62,31 @@ jobs:
           profile: pixel_5
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: |
-            mkdir -p docs/android
-            adb install -r android/app/build/outputs/apk/release/app-release.apk
-            adb shell am start -n app.fidexe.remote/.MainActivity
-            sleep 6
-            python3 tools/android_ui.py shot docs/android/connect.png
+          script: bash tools/android_flow.sh
 
-            python3 tools/android_ui.py tap-edit 0
-            python3 tools/android_ui.py type "10.0.2.2:47811"
-            python3 tools/android_ui.py hide-keyboard
-
-            CODE=$(curl -s http://127.0.0.1:47811/api/demo/code | python3 -c "import json,sys;print(json.load(sys.stdin)['code'])")
-            echo "pairing code from the mock desktop: $CODE"
-            python3 tools/android_ui.py tap-edit 1
-            python3 tools/android_ui.py type "$CODE"
-            python3 tools/android_ui.py hide-keyboard
-            python3 tools/android_ui.py shot docs/android/filled.png
-            python3 tools/android_ui.py tap-text "Войти по коду"
-            sleep 10
-            python3 tools/android_ui.py shot docs/android/control.png
-            python3 tools/android_ui.py tap-text "Заблокировать ноутбук"
-            sleep 4
-            python3 tools/android_ui.py shot docs/android/locked.png
-            echo "--- mock log ---"
-            cat /tmp/mock.log
-            echo "--- lock state ---"
-            curl -s http://127.0.0.1:47811/api/state; echo
-            echo "--- code login worked ---"
-            grep -c "phone paired with code" /tmp/mock.log || true
+      - name: Publish the emulator log on failure
+        if: failure()
+        run: |
+          {
+            echo "# emulator UI test log"
+            echo
+            echo '## mock desktop'
+            tail -n 80 /tmp/mock.log 2>/dev/null
+            echo
+            echo '## connect screen dump'
+            cat /tmp/ui-connect.txt 2>/dev/null | head -n 80
+            echo
+            echo '## control screen dump'
+            cat /tmp/ui-control.txt 2>/dev/null | head -n 80
+            echo
+            echo '## logcat (app)'
+            adb logcat -d -t 200 2>/dev/null | grep -iE "fidexe|AndroidRuntime" | tail -n 120
+          } > screens-log.md || true
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@fidexe.local"
+          git add -f screens-log.md
+          git commit -m "ci: android UI test log [skip ci]" || echo "nothing to commit"
+          git push || true
 
       - name: Commit screenshots
         run: |
