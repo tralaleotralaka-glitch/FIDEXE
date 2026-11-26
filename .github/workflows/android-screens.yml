@@ -74,24 +74,29 @@ jobs:
           {
             echo "# emulator UI test log"
             echo
+            echo "devices: $(adb devices | tr '\n' ' ')"
+            echo
             echo '## mock desktop'
             tail -n 80 /tmp/mock.log 2>/dev/null
             echo
+            echo '## flow log'
+            tail -n 120 /tmp/flow.log 2>/dev/null
+            echo
             echo '## connect screen dump'
-            cat /tmp/ui-connect.txt 2>/dev/null | head -n 80
+            head -n 80 /tmp/ui-connect.txt 2>/dev/null
             echo
             echo '## control screen dump'
-            cat /tmp/ui-control.txt 2>/dev/null | head -n 80
+            head -n 80 /tmp/ui-control.txt 2>/dev/null
             echo
             echo '## logcat (app)'
-            adb logcat -d -t 200 2>/dev/null | grep -iE "fidexe|AndroidRuntime" | tail -n 120
+            timeout 25 adb logcat -d -t 300 2>&1 | grep -iE "fidexe|AndroidRuntime" | tail -n 120
           } > screens-log.md || true
           git config user.name "ci-bot"
           git config user.email "ci-bot@fidexe.local"
           git add -f screens-log.md
           git commit -m "ci: android UI test log [skip ci]" || echo "nothing to commit"
-          git pull --rebase --quiet origin "${GITHUB_REF_NAME}" || true
-          git push || true
+          timeout 60 git pull --rebase --quiet origin "${GITHUB_REF_NAME}" || true
+          timeout 120 git push || true
 
       - name: Commit screenshots
         run: |

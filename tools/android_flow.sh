@@ -3,6 +3,8 @@
 # with the real 6-digit code from the mock desktop and takes the screenshots.
 # Runs inside the android-emulator-runner action (adb is already connected).
 set -uo pipefail
+# keep the whole run in one file so CI can publish it when something fails
+exec > >(tee -a /tmp/flow.log) 2>&1
 set -x
 
 OUT=docs/android

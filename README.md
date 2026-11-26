@@ -9,7 +9,7 @@
 
 | Что | Ссылка | Размер |
 | --- | --- | --- |
-| Windows 10/11 | **[FIDEXE.exe v2.0.0](https://github.com/tralaleotralaka-glitch/FIDEXE/releases/download/v2.0.0/FIDEXE.exe)** | ~110 МБ |
+| Windows 10/11 | **[FIDEXE.exe v2.0.0](https://github.com/tralaleotralaka-glitch/FIDEXE/releases/download/v2.0.0/FIDEXE.exe)** | ~86 МБ |
 | Android 7.0+ | **[FIDEXE-Remote-2.0.0.apk](https://github.com/tralaleotralaka-glitch/FIDEXE/releases/download/android-v2.0.0/FIDEXE-Remote-2.0.0.apk)** | ~95 КБ |
 
 1. Скачайте `FIDEXE.exe` и запустите — установка и права администратора не нужны.
