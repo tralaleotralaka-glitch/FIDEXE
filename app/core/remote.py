@@ -3,14 +3,20 @@
 Protocol (JSON over HTTP on the LAN, no internet involved):
 
     GET  /api/info                      -> app metadata + masked account hint
+    POST /api/pair            {code}     -> {token, ...}   (6-digit code from the desktop)
     POST /api/auth/challenge  {email}    -> {salt, iterations, challenge}
     POST /api/auth/proof      {email, challenge, proof} -> {token, expires_in}
     GET  /api/status          (Bearer)   -> live statistics of the desktop
     POST /api/command         (Bearer)   -> {cmd: lock|sleep|pause|resume}
 
-The password itself never leaves the phone: the phone derives the same PBKDF2
-hash the desktop stored (salt/iterations are public), and proves knowledge of it
-by signing a random challenge with HMAC-SHA256.
+Two ways in:
+
+* pairing code -- the desktop shows six digits that rotate every minute
+  (HMAC-SHA256 of a per-installation secret and the current minute). Typing them
+  on the phone opens the control panel straight away;
+* account -- the phone derives the same PBKDF2 hash the desktop stored
+  (salt/iterations are public) and proves knowledge of the password by signing a
+  random challenge with HMAC-SHA256, so the password never crosses the network.
 """
 from __future__ import annotations
 
@@ -18,6 +24,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import secrets
 import socket
 import threading
@@ -30,7 +37,7 @@ from PySide6.QtCore import QObject, Signal
 
 from . import power
 from .db import Storage
-from .paths import APP_NAME, APP_VERSION
+from .paths import APP_NAME, APP_VERSION, data_dir
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +46,9 @@ DEFAULT_PORT = 47811
 PROTOCOL = 1
 TOKEN_TTL = 2 * 3600
 CHALLENGE_TTL = 120
+PAIR_CODE_PERIOD = 60          # seconds a pairing code stays valid
+PAIR_CODE_DIGITS = 6
+PAIR_SECRET_FILE = "pair_secret"
 AUTH_WINDOW = 300
 AUTH_MAX_FAILURES = 8
 MAX_BODY = 64 * 1024
@@ -65,6 +75,18 @@ def hostname() -> str:
         return socket.gethostname().split(".")[0]
     except OSError:
         return "DESKTOP"
+
+
+def pair_code_for(secret: bytes, window: int) -> str:
+    """Six digits derived from the installation secret and the current minute."""
+    digest = hmac.new(secret, f"fidexe-pair:{window}".encode("utf-8"), hashlib.sha256).digest()
+    value = int.from_bytes(digest[:8], "big") % (10 ** PAIR_CODE_DIGITS)
+    return f"{value:0{PAIR_CODE_DIGITS}d}"
+
+
+def format_pair_code(code: str) -> str:
+    """`123456` -> `123 456` for display."""
+    return f"{code[:3]} {code[3:]}" if len(code) == PAIR_CODE_DIGITS else code
 
 
 def mask_email(email: str) -> str:
@@ -102,11 +124,13 @@ class RemoteControl(QObject):
         self,
         store: Storage,
         status_provider: Callable[[int], dict],
+        account_provider: Callable[[], int] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.store = store
         self.status_provider = status_provider
+        self.account_provider = account_provider
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._zeroconf = None
@@ -115,6 +139,7 @@ class RemoteControl(QObject):
         self._challenges: dict[str, tuple[int, float]] = {}
         self._failures: dict[str, list[float]] = {}
         self._port = DEFAULT_PORT
+        self._pair_secret: bytes | None = None
         self.action_override: Callable[[str], bool] | None = None
 
     # ------------------------------------------------------------------ state
@@ -213,6 +238,82 @@ class RemoteControl(QObject):
         except Exception:  # noqa: BLE001
             pass
 
+    # ---------------------------------------------------------- pairing code
+    def pair_secret(self) -> bytes:
+        """Per-installation secret for the rotating code, created on first use."""
+        with self._lock:
+            if self._pair_secret is not None:
+                return self._pair_secret
+            path = data_dir() / PAIR_SECRET_FILE
+            secret = b""
+            try:
+                if path.exists():
+                    stored = path.read_text(encoding="ascii").strip()
+                    if len(stored) >= 32:
+                        secret = bytes.fromhex(stored)
+            except (OSError, ValueError):
+                secret = b""
+            if not secret:
+                secret = secrets.token_bytes(32)
+                try:
+                    path.write_text(secret.hex(), encoding="ascii")
+                    try:
+                        os.chmod(path, 0o600)
+                    except OSError:
+                        pass
+                except OSError:
+                    log.warning("Не удалось сохранить секрет кода подключения")
+            self._pair_secret = secret
+            return secret
+
+    def pair_window(self, now: float | None = None) -> int:
+        return int((time.time() if now is None else now) // PAIR_CODE_PERIOD)
+
+    def pair_code(self) -> str:
+        """Current six digits shown in the desktop settings."""
+        return pair_code_for(self.pair_secret(), self.pair_window())
+
+    def pair_remaining(self) -> int:
+        """Seconds until the displayed code rotates (1..60)."""
+        return PAIR_CODE_PERIOD - int(time.time()) % PAIR_CODE_PERIOD
+
+    def _account_row(self):
+        user_id = int(self.account_provider() if self.account_provider else 0)
+        row = self.store.user_by_id(user_id) if user_id else None
+        if row is not None and not str(row["email"]).startswith("guest@"):
+            return row
+        for email in self.store.emails():
+            if email.startswith("guest@"):
+                continue
+            fallback = self.store.find_user(email)
+            if fallback is not None:
+                return fallback
+        return None
+
+    def pair(self, code: str, device: str, client: str) -> dict:
+        """Authenticate a phone with the rotating code shown on this computer."""
+        if self._rate_limited(client):
+            raise RemoteError("Слишком много попыток входа. Подождите несколько минут")
+        digits = "".join(ch for ch in str(code or "") if ch.isdigit())
+        if len(digits) != PAIR_CODE_DIGITS:
+            self._note_failure(client)
+            raise RemoteError(f"Код состоит из {PAIR_CODE_DIGITS} цифр — посмотрите его в настройках FIDEXE")
+        row = self._account_row()
+        if row is None:
+            raise RemoteError("На ноутбуке никто не вошёл в аккаунт — войдите по почте в FIDEXE")
+        secret = self.pair_secret()
+        window = self.pair_window()
+        # the previous minute is accepted too, so a code does not die mid-typing
+        accepted = any(
+            hmac.compare_digest(pair_code_for(secret, w), digits) for w in (window, window - 1)
+        )
+        if not accepted:
+            self._note_failure(client)
+            raise RemoteError("Неверный код — обновите его в настройках FIDEXE на ноутбуке")
+        self._clear_failures(client)
+        log.info("Телефон подключён по коду: %s", (device or "Android")[:60])
+        return self._start_session(row, device)
+
     # ------------------------------------------------------------------- auth
     def _rate_limited(self, client: str) -> bool:
         now = time.time()
@@ -262,6 +363,11 @@ class RemoteControl(QObject):
         if not hmac.compare_digest(expected, (proof or "").strip().lower()):
             self._note_failure(client)
             raise RemoteError("Неверный пароль")
+        self._clear_failures(client)
+        log.info("Телефон подключён: %s (%s)", (device or "Android")[:60], mask_email(row["email"]))
+        return self._start_session(row, device)
+
+    def _start_session(self, row, device: str) -> dict:
         token = secrets.token_urlsafe(32)
         now = time.time()
         session = Session(
@@ -273,10 +379,13 @@ class RemoteControl(QObject):
         )
         with self._lock:
             self._sessions[token] = session
-        self._clear_failures(client)
-        log.info("Телефон подключён: %s (%s)", session.device, mask_email(session.email))
         self.client_authenticated.emit(session.email, session.device)
-        return {"token": token, "expires_in": TOKEN_TTL, "account": row["email"]}
+        return {
+            "token": token,
+            "expires_in": TOKEN_TTL,
+            "account": session.email,
+            "host": hostname(),
+        }
 
     def session_for(self, token: str) -> Session:
         now = time.time()
@@ -320,6 +429,8 @@ class RemoteControl(QObject):
             "address": f"{local_ip()}:{self._port}",
             "accounts": emails,
             "requires_account": not emails,
+            "pairing": True,
+            "pair_code_ttl": PAIR_CODE_PERIOD,
         }
 
     def status(self, user_id: int) -> dict:
@@ -402,6 +513,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         path = self.path.split("?")[0].rstrip("/") or "/"
         try:
+            if path == "/api/pair":
+                data = self._body()
+                self._send(
+                    200,
+                    self.remote.pair(
+                        str(data.get("code", "")),
+                        str(data.get("device", "Android")),
+                        self._client(),
+                    ),
+                )
+                return
             if path == "/api/auth/challenge":
                 data = self._body()
                 self._send(200, self.remote.challenge(str(data.get("email", ""))))

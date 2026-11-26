@@ -109,6 +109,9 @@ def main() -> int:
     theme.set_current("dark")
     app.setStyleSheet(theme.build_stylesheet(theme.CURRENT))
     ctx.sign_in(user_id, True)
+    # the settings page shows the real rotating phone code, so turn the LAN server on
+    ctx.settings.set("remote_port", 47898)
+    ctx.set_remote_enabled(True)
     latest = ctx.store.latest_usage(user_id)
     if latest:
         ctx.tracker.changed.emit(latest["process"], latest["title"] or "")
@@ -143,6 +146,7 @@ def main() -> int:
         app.processEvents()
     light.grab().save(str(OUT / "stats_light.png"))
 
+    ctx.set_remote_enabled(False)
     print("saved to", OUT)
     return 0
 

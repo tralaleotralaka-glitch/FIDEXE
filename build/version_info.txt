@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 1, 0, 0),
-    prodvers=(1, 1, 0, 0),
+    filevers=(1, 2, 0, 0),
+    prodvers=(1, 2, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -17,12 +17,12 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'FIDEXE'),
             StringStruct(u'FileDescription', u'FIDEXE - clipboard history and app usage tracker'),
-            StringStruct(u'FileVersion', u'1.1.0.0'),
+            StringStruct(u'FileVersion', u'1.2.0.0'),
             StringStruct(u'InternalName', u'FIDEXE'),
             StringStruct(u'LegalCopyright', u'Free for personal use'),
             StringStruct(u'OriginalFilename', u'FIDEXE.exe'),
             StringStruct(u'ProductName', u'FIDEXE'),
-            StringStruct(u'ProductVersion', u'1.1.0.0')
+            StringStruct(u'ProductVersion', u'1.2.0.0')
           ]
         )
       ]

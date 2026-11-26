@@ -33,7 +33,9 @@ class AppContext(QObject):
         self._shutdown = False
         self.watcher.attach()
 
-        self.remote = RemoteControl(self.store, self._remote_status)
+        self.remote = RemoteControl(
+            self.store, self._remote_status, account_provider=lambda: self.user_id
+        )
         self.remote.locked.connect(self._on_remote_lock)
         self.remote.client_authenticated.connect(self._on_remote_client)
         self.remote.command_done.connect(self._on_remote_command)

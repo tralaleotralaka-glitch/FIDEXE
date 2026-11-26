@@ -59,6 +59,17 @@ final class Api {
         return call(host, "/api/auth/proof", "POST", body, null);
     }
 
+    /** Sign in with the six digits the desktop shows in its settings. */
+    static JSONObject pair(String host, String code, String device) throws ApiException {
+        JSONObject body = new JSONObject();
+        try {
+            body.put("code", code);
+            body.put("device", device);
+        } catch (JSONException ignored) {
+        }
+        return call(host, "/api/pair", "POST", body, null);
+    }
+
     static JSONObject status(String host, String token) throws ApiException {
         return call(host, "/api/status", "GET", null, token);
     }

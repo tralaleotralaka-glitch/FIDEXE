@@ -53,7 +53,7 @@ jobs:
           sleep 2
           curl -s http://127.0.0.1:47811/api/info; echo
 
-      - name: Boot emulator, pair the app and take screenshots
+      - name: Boot emulator, log in with the desktop code and take screenshots
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
@@ -72,14 +72,14 @@ jobs:
             python3 tools/android_ui.py tap-edit 0
             python3 tools/android_ui.py type "10.0.2.2:47811"
             python3 tools/android_ui.py hide-keyboard
+
+            CODE=$(curl -s http://127.0.0.1:47811/api/demo/code | python3 -c "import json,sys;print(json.load(sys.stdin)['code'])")
+            echo "pairing code from the mock desktop: $CODE"
             python3 tools/android_ui.py tap-edit 1
-            python3 tools/android_ui.py type "demo@fidexe.app"
-            python3 tools/android_ui.py hide-keyboard
-            python3 tools/android_ui.py tap-edit 2
-            python3 tools/android_ui.py type "demo-pass-123"
+            python3 tools/android_ui.py type "$CODE"
             python3 tools/android_ui.py hide-keyboard
             python3 tools/android_ui.py shot docs/android/filled.png
-            python3 tools/android_ui.py tap-text "Подключиться"
+            python3 tools/android_ui.py tap-text "Войти по коду"
             sleep 10
             python3 tools/android_ui.py shot docs/android/control.png
             python3 tools/android_ui.py tap-text "Заблокировать ноутбук"
@@ -89,6 +89,8 @@ jobs:
             cat /tmp/mock.log
             echo "--- lock state ---"
             curl -s http://127.0.0.1:47811/api/state; echo
+            echo "--- code login worked ---"
+            grep -c "phone paired with code" /tmp/mock.log || true
 
       - name: Commit screenshots
         run: |

@@ -10,7 +10,6 @@ import json
 import os
 import sys
 import tempfile
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -23,9 +22,13 @@ os.environ["XDG_DATA_HOME"] = TMP
 os.environ["APPDATA"] = TMP
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+try:  # a GUI is not required for the protocol test
+    from PySide6.QtWidgets import QApplication  # noqa: E402
+except Exception:  # noqa: BLE001 - headless box without GL/dbus
+    from PySide6.QtCore import QCoreApplication as QApplication  # noqa: E402
 
 from app.context import AppContext  # noqa: E402
+from app.core import remote as remote_mod  # noqa: E402
 
 PORT = 47899
 BASE = f"http://127.0.0.1:{PORT}"
@@ -126,6 +129,40 @@ def main() -> int:
 
     check("unknown account", request("/api/auth/challenge", {"email": "nobody@x.y"})[0] == 400)
 
+    print("[pairing code]")
+    current = ctx.remote.pair_code()
+    check("code is six digits", len(current) == 6 and current.isdigit(), current)
+    check("code formatted for display", remote_mod.format_pair_code(current) == f"{current[:3]} {current[3:]}")
+    check("code rotates within a minute", 1 <= ctx.remote.pair_remaining() <= 60, str(ctx.remote.pair_remaining()))
+    secret = ctx.remote.pair_secret()
+    window = ctx.remote.pair_window()
+    check("code changes every minute",
+          len({remote_mod.pair_code_for(secret, window + i) for i in range(6)}) == 6)
+    check("info advertises pairing", info.get("pairing") is True and info.get("pair_code_ttl") == 60)
+
+    code, paired = request("/api/pair", {"code": "000000", "device": "Pixel code"})
+    check("wrong code rejected", code == 400 and "error" in paired, f"{code} {paired}")
+    code, paired = request("/api/pair", {"code": "12ab", "device": "Pixel code"})
+    check("short code rejected", code == 400, str(code))
+
+    code, paired = request("/api/pair", {"code": current, "device": "Pixel 8 (код)"})
+    check("correct code accepted", code == 200 and "token" in paired, f"{code} {paired}")
+    code_token = paired.get("token", "")
+    check("pair response carries account", paired.get("account") == email, str(paired))
+    code, status2 = request("/api/status", token=code_token)
+    check("code token opens the panel", code == 200 and "today_seconds" in status2, str(code))
+
+    previous = remote_mod.pair_code_for(secret, window - 1)
+    code, _ = request("/api/pair", {"code": previous, "device": "Pixel old"})
+    check("code from the previous minute still works", code == 200, str(code))
+
+    stale = remote_mod.pair_code_for(secret, window - 3)
+    code, _ = request("/api/pair", {"code": stale, "device": "Pixel stale"})
+    check("code from three minutes ago rejected", code == 400, str(code))
+
+    code, paired = request("/api/pair", {"code": remote_mod.format_pair_code(current), "device": "Pixel spaced"})
+    check("code with a space accepted", code == 200, str(code))
+
     print("[authorised calls]")
     code, status = request("/api/status", token=token)
     check("status authorised", code == 200, str(code))
@@ -149,6 +186,16 @@ def main() -> int:
     request("/api/command", {"cmd": "pause"}, token=token)
     app.processEvents()
     check("signal emitted", ("pause", "Pixel 7 (тест)") in seen, str(seen))
+
+    print("[rate limiting]")
+    # the wrong/short/stale attempts above already count against this client
+    locked_out = False
+    for _ in range(10):
+        code, body = request("/api/pair", {"code": "000000", "device": "brute"})
+        if code == 400 and "Слишком много" in str(body.get("error", "")):
+            locked_out = True
+            break
+    check("brute force is rate limited", locked_out)
 
     print("[teardown]")
     ctx.set_remote_enabled(False)

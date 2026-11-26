@@ -21,6 +21,18 @@ SALT = "00112233445566778899aabbccddeeff"
 ITERATIONS = 240_000
 PW_HASH = hashlib.pbkdf2_hmac("sha256", PASSWORD.encode(), bytes.fromhex(SALT), ITERATIONS).hex()
 TOKEN = "demo-token-1234567890"
+PAIR_SECRET = secrets.token_bytes(32)
+PAIR_PERIOD = 60
+
+
+def pair_code_for(window: int) -> str:
+    """Same derivation as the desktop app: six digits per minute."""
+    digest = hmac.new(PAIR_SECRET, f"fidexe-pair:{window}".encode(), hashlib.sha256).digest()
+    return f"{int.from_bytes(digest[:8], 'big') % 1_000_000:06d}"
+
+
+def current_pair_code() -> str:
+    return pair_code_for(int(time.time() // PAIR_PERIOD))
 CHALLENGES: dict[str, float] = {}
 STATE = {"locked": 0, "commands": [], "paused": False}
 
@@ -61,12 +73,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         path = self.path.split("?")[0]
         if path == "/api/ping":
-            self._send(200, {"ok": True, "app": "FIDEXE", "version": "1.1.0"})
+            self._send(200, {"ok": True, "app": "FIDEXE", "version": "1.2.0"})
         elif path == "/api/info":
             self._send(200, {
-                "app": "FIDEXE", "version": "1.1.0", "protocol": 1,
+                "app": "FIDEXE", "version": "1.2.0", "protocol": 1,
                 "host": "DESKTOP-DEMO", "address": "127.0.0.1:47811",
                 "accounts": ["de***@fidexe.app"], "requires_account": False,
+                "pairing": True, "pair_code_ttl": PAIR_PERIOD,
             })
         elif path == "/api/status":
             if not self._authorised():
@@ -86,6 +99,12 @@ class Handler(BaseHTTPRequestHandler):
                 "tracking": not STATE["paused"],
                 "locked_supported": True,
             })
+        elif path == "/api/demo/code":
+            # mock-only helper so the UI test can type the real current code
+            self._send(200, {
+                "code": current_pair_code(),
+                "left": PAIR_PERIOD - int(time.time()) % PAIR_PERIOD,
+            })
         elif path == "/api/state":
             self._send(200, {"locked": STATE["locked"], "commands": STATE["commands"]})
         else:
@@ -94,6 +113,23 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         path = self.path.split("?")[0]
         data = self._body()
+        if path == "/api/pair":
+            digits = "".join(ch for ch in str(data.get("code", "")) if ch.isdigit())
+            window = int(time.time() // PAIR_PERIOD)
+            accepted = any(pair_code_for(w) == digits for w in (window, window - 1))
+            if len(digits) != 6:
+                self._send(400, {"error": "Код состоит из 6 цифр"})
+                return
+            if not accepted:
+                print("[mock] WRONG PAIR CODE:", digits, flush=True)
+                self._send(400, {"error": "Неверный код — обновите его на ноутбуке"})
+                return
+            print("[mock] phone paired with code:", data.get("device"), flush=True)
+            self._send(200, {
+                "token": TOKEN, "expires_in": 7200, "account": EMAIL,
+                "host": "DESKTOP-DEMO",
+            })
+            return
         if path == "/api/auth/challenge":
             if str(data.get("email", "")).lower() != EMAIL:
                 self._send(400, {"error": "Аккаунт с такой почтой не найден на этом компьютере"})
@@ -140,7 +176,11 @@ def main() -> None:
     args = parser.parse_args()
     server = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     server.daemon_threads = True
-    print(f"[mock] FIDEXE desktop API on 0.0.0.0:{args.port} (demo@fidexe.app / demo-pass-123)", flush=True)
+    print(
+        f"[mock] FIDEXE desktop API on 0.0.0.0:{args.port} "
+        f"(demo@fidexe.app / demo-pass-123, code {current_pair_code()})",
+        flush=True,
+    )
     server.serve_forever()
 
 

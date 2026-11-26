@@ -287,6 +287,34 @@ class SettingsPage(Page):
         address_row.addStretch(1)
         card.body.addLayout(address_row)
 
+        card.body.addWidget(hline())
+        code_row = QHBoxLayout()
+        code_row.setSpacing(14)
+
+        code_box = QVBoxLayout()
+        code_box.setSpacing(2)
+        code_caption = QLabel("Код для телефона")
+        code_caption.setStyleSheet("font-size: 12px; font-weight: 700;")
+        code_box.addWidget(code_caption)
+        self.pair_code = QLabel("— — —")
+        self.pair_code.setStyleSheet(
+            f"font-family: 'Cascadia Mono','Consolas','DejaVu Sans Mono',monospace;"
+            f" font-size: 34px; font-weight: 800; letter-spacing: 6px; color: {self.p['accent']};"
+        )
+        self.pair_code.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        code_box.addWidget(self.pair_code)
+        self.pair_timer = QLabel("")
+        self.pair_timer.setObjectName("Faint")
+        code_box.addWidget(self.pair_timer)
+        code_row.addLayout(code_box)
+        code_row.addStretch(1)
+
+        self.copy_code = QPushButton("Скопировать код")
+        self.copy_code.setCursor(Qt.PointingHandCursor)
+        self.copy_code.clicked.connect(self._copy_code)
+        code_row.addWidget(self.copy_code, 0, Qt.AlignVCenter)
+        card.body.addLayout(code_row)
+
         self.remote_hint = QLabel("")
         self.remote_hint.setObjectName("Faint")
         self.remote_hint.setWordWrap(True)
@@ -296,7 +324,33 @@ class SettingsPage(Page):
         self._remote_timer.setInterval(5000)
         self._remote_timer.timeout.connect(self._refresh_remote)
         self._remote_timer.start()
+
+        self._code_timer = QTimer(self)
+        self._code_timer.setInterval(1000)
+        self._code_timer.timeout.connect(self._refresh_pair_code)
+        self._code_timer.start()
         self._refresh_remote()
+        self._refresh_pair_code()
+
+    def _refresh_pair_code(self) -> None:
+        if not self.ctx.remote.running:
+            self.pair_code.setText("— — —")
+            self.pair_timer.setText("включите управление с телефона, чтобы получить код")
+            self.copy_code.setEnabled(False)
+            return
+        current = self.ctx.remote.pair_code()
+        self.pair_code.setText(remote.format_pair_code(current))
+        left = self.ctx.remote.pair_remaining()
+        self.pair_timer.setText(f"новый код через {left} с · действует только с этим ноутбуком")
+        self.copy_code.setEnabled(True)
+
+    def _copy_code(self) -> None:
+        if not self.ctx.remote.running:
+            return
+        from PySide6.QtGui import QGuiApplication
+
+        QGuiApplication.clipboard().setText(self.ctx.remote.pair_code())
+        self.ctx.toast.emit("Код скопирован", "ok")
 
     def _refresh_remote(self) -> None:
         running = self.ctx.remote.running
@@ -314,13 +368,14 @@ class SettingsPage(Page):
             self.lock_test.setEnabled(False)
         elif not [e for e in self.ctx.store.emails() if not e.startswith("guest@")]:
             self.remote_hint.setText(
-                "Сначала войдите по почте (не гостем) — телефон авторизуется той же почтой и паролем, "
-                "что и на ноутбуке."
+                "Сначала войдите по почте (не гостем): телефон подключается шестизначным кодом "
+                "к тому аккаунту, который открыт на ноутбуке."
             )
         else:
             self.remote_hint.setText(
-                "Телефон и ноутбук должны быть в одной Wi-Fi сети. Пароль не передаётся: телефон "
-                "доказывает знание пароля HMAC-подписью, сервер работает только в локальной сети."
+                "Введите эти 6 цифр в приложении FIDEXE Remote на Android — откроется пульт этого "
+                "ноутбука. Код действует минуту и работает только в вашей Wi-Fi сети; на телефоне "
+                "есть и вход по почте с паролем."
             )
 
     def _on_remote_toggle(self, enabled: bool) -> None:

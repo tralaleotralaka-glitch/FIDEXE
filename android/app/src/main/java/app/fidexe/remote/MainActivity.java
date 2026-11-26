@@ -76,6 +76,8 @@ public class MainActivity extends Activity {
     private Discovery discovery;
     private LinearLayout foundBox;
     private EditText hostField;
+    private EditText codeField;
+    private TextView codeButton;
     private EditText emailField;
     private EditText passwordField;
     private TextView errorLabel;
@@ -150,7 +152,7 @@ public class MainActivity extends Activity {
         container.removeAllViews();
         addBrandHeader();
         container.addView(text("Блокировка ноутбука\nс телефона", TEXT, 24, true), lpm(-1, -2, 18));
-        container.addView(text("Тот же аккаунт, что на ноутбуке, и одна Wi-Fi сеть.",
+        container.addView(text("Введите 6 цифр из настроек FIDEXE на ноутбуке — и пульт откроется.",
                 MUTED, 13, false), lpm(-1, -2, 6));
 
         // ---- laptop card
@@ -170,16 +172,34 @@ public class MainActivity extends Activity {
         laptopCard.addView(hostField, lpm(-1, dp(48), 6));
         container.addView(laptopCard, lpm(-1, -2, 18));
 
-        // ---- account card
+        // ---- pairing code card
+        LinearLayout codeCard = card();
+        codeCard.addView(sectionTitle("Код с ноутбука"));
+        codeCard.addView(text("FIDEXE на ноутбуке → Настройки → «Телефон и блокировка». "
+                + "Шесть цифр меняются каждую минуту.", MUTED, 12, false), lpm(-1, -2, 6));
+        codeField = field("000 000", InputType.TYPE_CLASS_NUMBER);
+        codeField.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
+        codeField.setLetterSpacing(0.28f);
+        codeField.setGravity(Gravity.CENTER);
+        codeCard.addView(codeField, lpm(-1, dp(62), 12));
+        codeButton = button("Войти по коду", true);
+        codeButton.setOnClickListener(v -> doConnectWithCode());
+        codeCard.addView(codeButton, lpm(-1, dp(52), 10));
+        container.addView(codeCard, lpm(-1, -2, 14));
+
+        // ---- account card (fallback)
         LinearLayout accountCard = card();
-        accountCard.addView(sectionTitle("Аккаунт"));
-        accountCard.addView(text("Почта и пароль, под которыми вы входите в FIDEXE на ноутбуке.",
+        accountCard.addView(sectionTitle("Или по почте и паролю"));
+        accountCard.addView(text("Тот же аккаунт, что на ноутбуке — если код под рукой не оказалось.",
                 MUTED, 12, false), lpm(-1, -2, 6));
         emailField = field("you@mail.ru", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         emailField.setText(email);
         accountCard.addView(emailField, lpm(-1, dp(48), 12));
         passwordField = field("Пароль", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         accountCard.addView(passwordField, lpm(-1, dp(48), 10));
+        connectButton = button("Войти с паролем", false);
+        connectButton.setOnClickListener(v -> doConnect());
+        accountCard.addView(connectButton, lpm(-1, dp(48), 12));
         accountCard.addView(text("Пароль не передаётся на ноутбук: телефон доказывает его знание HMAC-подписью.",
                 FAINT, 11, false), lpm(-1, -2, 10));
         container.addView(accountCard, lpm(-1, -2, 14));
@@ -188,13 +208,9 @@ public class MainActivity extends Activity {
         errorLabel.setVisibility(View.GONE);
         container.addView(errorLabel, lpm(-1, -2, 12));
 
-        connectButton = button("Подключиться", true);
-        connectButton.setOnClickListener(v -> doConnect());
-        container.addView(connectButton, lpm(-1, dp(54), 14));
-
         container.addView(text("Работает только в локальной сети: данные идут напрямую с телефона "
                 + "на ноутбук, интернет не нужен.", FAINT, 11, false), lpm(-1, -2, 16));
-        container.addView(text("FIDEXE Remote 1.0.0", FAINT, 11, false), lpm(-1, -2, 8));
+        container.addView(text("FIDEXE Remote 1.1.0", FAINT, 11, false), lpm(-1, -2, 8));
     }
 
     private void startDiscovery() {
@@ -260,6 +276,58 @@ public class MainActivity extends Activity {
         return row;
     }
 
+    private void doConnectWithCode() {
+        String raw = hostField.getText().toString().trim();
+        final String code = codeField.getText().toString().replaceAll("[^0-9]", "");
+        if (raw.isEmpty()) {
+            showError("Найдите ноутбук в Wi-Fi или введите адрес");
+            return;
+        }
+        if (!raw.contains(":")) {
+            raw = raw + ":" + Api.DEFAULT_PORT;
+        }
+        if (code.length() != 6) {
+            showError("Код с ноутбука — ровно 6 цифр");
+            return;
+        }
+        final String target = raw;
+        hideKeyboard();
+        setConnectBusy(true);
+        showError("");
+        io.execute(() -> {
+            try {
+                String device = (Build.MANUFACTURER + " " + Build.MODEL).trim();
+                JSONObject auth = Api.pair(target, code, device);
+                final String newToken = auth.getString("token");
+                final String name = auth.optString("host", "Ноутбук");
+                final String mail = auth.optString("account", email);
+                ui.post(() -> {
+                    setConnectBusy(false);
+                    onConnected(target, newToken, name, mail);
+                });
+            } catch (Exception exc) {
+                ui.post(() -> {
+                    setConnectBusy(false);
+                    showError(describe(exc));
+                });
+            }
+        });
+    }
+
+    private void onConnected(String target, String newToken, String name, String mail) {
+        host = target;
+        token = newToken;
+        email = mail;
+        laptopName = name;
+        prefs.edit()
+                .putString("host", host)
+                .putString("token", token)
+                .putString("email", email)
+                .putString("laptop", laptopName)
+                .apply();
+        showControlScreen();
+    }
+
     private void doConnect() {
         String raw = hostField.getText().toString().trim();
         final String mail = emailField.getText().toString().trim();
@@ -294,17 +362,7 @@ public class MainActivity extends Activity {
                 final String name = info.optString("host", "Ноутбук");
                 ui.post(() -> {
                     setConnectBusy(false);
-                    host = target;
-                    token = newToken;
-                    email = mail;
-                    laptopName = name;
-                    prefs.edit()
-                            .putString("host", host)
-                            .putString("token", token)
-                            .putString("email", email)
-                            .putString("laptop", laptopName)
-                            .apply();
-                    showControlScreen();
+                    onConnected(target, newToken, name, mail);
                 });
             } catch (Exception exc) {
                 ui.post(() -> {
@@ -599,10 +657,12 @@ public class MainActivity extends Activity {
                 + "2. Телефон и ноутбук должны быть в одной Wi-Fi сети.\n\n"
                 + "3. На телефоне нажмите «Найти ноутбук в Wi-Fi» или введите адрес "
                 + "вида 192.168.1.10:47811.\n\n"
-                + "4. Войдите почтой и паролем того же аккаунта, что на ноутбуке.\n\n"
-                + "5. Кнопка «Заблокировать ноутбук» сразу блокирует экран компьютера.\n\n"
-                + "Пароль не отправляется: телефон доказывает его знание HMAC-подписью. "
-                + "Сервер работает только в локальной сети, в интернет данные не уходят.");
+                + "4. На ноутбуке: Настройки → «Телефон и блокировка» — там шесть цифр, "
+                + "они меняются каждую минуту.\n\n"
+                + "5. Введите эти цифры на телефоне и нажмите «Войти по коду» — откроется пульт. "
+                + "Можно войти и почтой с паролем того же аккаунта.\n\n"
+                + "6. Кнопка «Заблокировать ноутбук» сразу блокирует экран компьютера.\n\n"
+                + "Код живёт минуту и работает только в вашей Wi-Fi сети; сервер не выходит в интернет.");
         builder.setPositiveButton("Понятно", null);
         builder.show();
     }
@@ -624,7 +684,12 @@ public class MainActivity extends Activity {
 
     private void setConnectBusy(boolean busy) {
         connectButton.setEnabled(!busy);
-        connectButton.setText(busy ? "Подключаюсь…" : "Подключиться");
+        connectButton.setText(busy ? "Подключаюсь…" : "Войти с паролем");
+        if (codeButton != null) {
+            codeButton.setEnabled(!busy);
+            codeButton.setText(busy ? "Подключаюсь…" : "Войти по коду");
+            codeButton.setAlpha(busy ? 0.6f : 1f);
+        }
         connectButton.setAlpha(busy ? 0.6f : 1f);
     }
 
