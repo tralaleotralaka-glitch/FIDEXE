@@ -45,7 +45,7 @@ a = Analysis(
     pathex=[str(ROOT)],
     binaries=[],
     datas=datas,
-    hiddenimports=["psutil"],
+    hiddenimports=["psutil", "cv2", "numpy"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -70,7 +70,7 @@ exe_options = dict(
 
 if sys.platform == "win32":
     exe_options["icon"] = str(ROOT / "app" / "assets" / "app.ico")
-    version_file = ROOT / "build" / "version_info.txt"
+    version_file = ROOT / "packaging" / "version_info.txt"
     if version_file.exists():
         exe_options["version"] = str(version_file)
 

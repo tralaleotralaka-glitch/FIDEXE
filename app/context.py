@@ -7,6 +7,8 @@ import time
 from datetime import date, datetime
 
 from .core.auth import AuthService
+from .core import processes
+from .core.camera import CameraService
 from .core.clipboard_watch import ClipboardWatcher
 from .core.db import Storage
 from .core.remote import RemoteControl
@@ -33,8 +35,15 @@ class AppContext(QObject):
         self._shutdown = False
         self.watcher.attach()
 
+        self.camera = CameraService()
         self.remote = RemoteControl(
-            self.store, self._remote_status, account_provider=lambda: self.user_id
+            self.store,
+            self._remote_status,
+            account_provider=lambda: self.user_id,
+            camera=self.camera,
+            camera_allowed=lambda: bool(self.settings.get("camera_allowed", False)),
+            apps_provider=processes.list_apps,
+            app_closer=processes.close_app if processes.supported() else None,
         )
         self.remote.locked.connect(self._on_remote_lock)
         self.remote.client_authenticated.connect(self._on_remote_client)
@@ -139,6 +148,7 @@ class AppContext(QObject):
             return
         self._shutdown = True
         self.remote.stop()
+        self.camera.stop()
         self.tracker.shutdown()
         self.settings.save()
         self.store.close()

@@ -7,7 +7,7 @@ from pathlib import Path
 
 APP_NAME = "FIDEXE"
 APP_TITLE = "FIDEXE"
-APP_VERSION = "1.2.0"
+APP_VERSION = "2.0.0"
 APP_TAGLINE = "Буфер обмена и статистика активности"
 
 

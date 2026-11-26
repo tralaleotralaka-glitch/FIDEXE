@@ -23,6 +23,7 @@ DEFAULTS: dict[str, Any] = {
     "notify_on_copy": False,
     "remote_enabled": False,      # LAN control endpoint for the Android app
     "remote_port": 47811,
+    "camera_allowed": False,      # let the phone watch this PC's webcam
 }
 
 

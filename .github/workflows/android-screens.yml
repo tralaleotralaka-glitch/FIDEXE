@@ -4,6 +4,10 @@ on:
   push:
     paths:
       - ".github/workflows/android-screens.yml"
+      - "android/**"
+      - "tools/android_flow.sh"
+      - "tools/android_ui.py"
+      - "tools/mock_remote.py"
   workflow_dispatch:
 
 permissions:

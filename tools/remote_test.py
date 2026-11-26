@@ -59,6 +59,18 @@ def request(path: str, payload: dict | None = None, token: str = "", method: str
         return exc.code, json.loads(exc.read().decode() or "{}")
 
 
+def request_raw(path: str, token: str = ""):
+    """Fetch a binary endpoint: returns (status, content-type, body)."""
+    req = urllib.request.Request(BASE + path)
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return response.status, response.headers.get("Content-Type", ""), response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.headers.get("Content-Type", ""), exc.read()
+
+
 def derive(password: str, salt_hex: str, iterations: int) -> str:
     return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), iterations).hex()
 
@@ -196,6 +208,65 @@ def main() -> int:
             locked_out = True
             break
     check("brute force is rate limited", locked_out)
+
+    print("[running apps]")
+    check("apps need auth", request("/api/apps")[0] == 401)
+    code, listing = request("/api/apps", token=token)
+    check("apps endpoint responds", code == 200 and "apps" in listing, str(listing)[:120])
+    check("apps supported flag", isinstance(listing.get("supported"), bool))
+
+    ctx.remote.apps_provider = lambda: [
+        {"pid": 4242, "app": "notepad.exe", "title": "Блокнот — заметки", "active": True},
+        {"pid": 4343, "app": "chrome.exe", "title": "GitHub", "active": False},
+    ]
+    closed: list[int] = []
+    ctx.remote.app_closer = lambda pid: closed.append(pid) or True
+    code, listing = request("/api/apps", token=token)
+    check("apps listed", code == 200 and len(listing["apps"]) == 2, str(listing)[:120])
+    check("first app is the active one", listing["apps"][0]["app"] == "notepad.exe")
+    check("apps marked supported", listing.get("supported") is True)
+
+    code, result = request("/api/apps/close", {"pid": 4242}, token=token)
+    check("close accepted", code == 200 and result.get("ok") is True, str(result))
+    check("close used the pid", closed == [4242], str(closed))
+    check("close needs auth", request("/api/apps/close", {"pid": 4242})[0] == 401)
+    check("close with bad pid rejected", request("/api/apps/close", {"pid": 0}, token=token)[0] == 400)
+    check("close with text pid rejected",
+          request("/api/apps/close", {"pid": "nope"}, token=token)[0] == 400)
+
+    ctx.remote.app_closer = None
+    code, result = request("/api/apps/close", {"pid": 4242}, token=token)
+    check("close refused when unsupported", code == 400 and "Windows" in str(result.get("error")), str(result))
+
+    print("[camera]")
+    check("camera needs auth", request("/api/camera/info")[0] == 401)
+    code, info_cam = request("/api/camera/info", token=token)
+    check("camera info responds", code == 200 and "allowed" in info_cam, str(info_cam))
+    check("camera off by default", info_cam.get("allowed") is False, str(info_cam))
+    status, _ctype, body = request_raw("/api/camera/frame", token=token)
+    check("frame refused while disabled", status == 403, str(status))
+
+    class FakeCamera:
+        supported = True
+
+        def info(self):
+            return {"supported": True, "active": True, "width": 640, "height": 480, "fps": 8, "error": ""}
+
+        def snapshot(self, wait: float = 4.0) -> bytes:
+            return b"\xff\xd8\xff\xe0FIDEXE-FAKE-JPEG\xff\xd9"
+
+        def stop(self) -> None:
+            pass
+
+    ctx.settings.set("camera_allowed", True)
+    ctx.remote.camera = FakeCamera()
+    code, info_cam = request("/api/camera/info", token=token)
+    check("camera allowed after the switch", info_cam.get("allowed") is True, str(info_cam))
+    check("camera reports resolution", info_cam.get("width") == 640 and info_cam.get("height") == 480)
+    status, ctype, body = request_raw("/api/camera/frame", token=token)
+    check("frame delivered", status == 200 and ctype.startswith("image/jpeg"), f"{status} {ctype}")
+    check("frame looks like a jpeg", body.startswith(b"\xff\xd8") and body.endswith(b"\xff\xd9"), str(body[:8]))
+    check("frame needs auth", request_raw("/api/camera/frame")[0] == 401)
 
     print("[teardown]")
     ctx.set_remote_enabled(False)

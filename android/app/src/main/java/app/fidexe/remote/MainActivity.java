@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
@@ -30,6 +32,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.concurrent.ExecutorService;
@@ -98,6 +101,19 @@ public class MainActivity extends Activity {
 
     private Runnable pollTask;
 
+    // camera screen
+    private ImageView cameraView;
+    private TextView cameraStatus;
+    private Runnable cameraTask;
+    private boolean cameraFetching;
+    private boolean cameraStopped;
+
+    // apps screen
+    private LinearLayout appsList;
+    private TextView appsStatus;
+
+    private String screen = "connect";
+
     // ------------------------------------------------------------------ setup
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -137,7 +153,23 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onBackPressed() {
+        if ("camera".equals(screen) || "apps".equals(screen)) {
+            showControlScreen();
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    @Override
+    protected void onPause() {
+        stopCamera();
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
+        stopCamera();
         stopPolling();
         if (discovery != null) {
             discovery.stop();
@@ -148,6 +180,8 @@ public class MainActivity extends Activity {
 
     // ------------------------------------------------------- connect screen
     private void showConnectScreen() {
+        screen = "connect";
+        stopCamera();
         stopPolling();
         container.removeAllViews();
         addBrandHeader();
@@ -210,7 +244,7 @@ public class MainActivity extends Activity {
 
         container.addView(text("Работает только в локальной сети: данные идут напрямую с телефона "
                 + "на ноутбук, интернет не нужен.", FAINT, 11, false), lpm(-1, -2, 16));
-        container.addView(text("FIDEXE Remote 1.1.0", FAINT, 11, false), lpm(-1, -2, 8));
+        container.addView(text("FIDEXE Remote 2.0.0", FAINT, 11, false), lpm(-1, -2, 8));
     }
 
     private void startDiscovery() {
@@ -375,6 +409,8 @@ public class MainActivity extends Activity {
 
     // -------------------------------------------------------- control screen
     private void showControlScreen() {
+        screen = "control";
+        stopCamera();
         container.removeAllViews();
         addBrandHeader();
 
@@ -457,6 +493,23 @@ public class MainActivity extends Activity {
         pauseParams.leftMargin = dp(6);
         actions.addView(pauseButton, pauseParams);
         container.addView(actions, lpm(-1, -2, 10));
+
+        LinearLayout extras = new LinearLayout(this);
+        extras.setOrientation(LinearLayout.HORIZONTAL);
+        extras.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView cameraButton = actionButton("Камера ноутбука");
+        cameraButton.setOnClickListener(v -> showCameraScreen());
+        LinearLayout.LayoutParams cameraParams = new LinearLayout.LayoutParams(0, dp(50), 1f);
+        cameraParams.rightMargin = dp(6);
+        extras.addView(cameraButton, cameraParams);
+
+        TextView appsButton = actionButton("Приложения");
+        appsButton.setOnClickListener(v -> showAppsScreen());
+        LinearLayout.LayoutParams appsParams = new LinearLayout.LayoutParams(0, dp(50), 1f);
+        appsParams.leftMargin = dp(6);
+        extras.addView(appsButton, appsParams);
+        container.addView(extras, lpm(-1, -2, 8));
 
         logLine = text("", MUTED, 12, false);
         container.addView(logLine, lpm(-1, -2, 14));
@@ -548,6 +601,276 @@ public class MainActivity extends Activity {
         trackingValue.setText(paused ? "Пауза" : "Активен");
         trackingValue.setTextColor(paused ? WARN : MINT);
         pauseButton.setText(paused ? "Включить трекинг" : "Пауза трекинга");
+    }
+
+    // -------------------------------------------------------- camera screen
+    private View screenHeader(String title, String action, Runnable onAction) {
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView back = text("‹  Назад", ACCENT, 13, true);
+        back.setPadding(dp(4), dp(8), dp(10), dp(8));
+        back.setClickable(true);
+        back.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            showControlScreen();
+        });
+        head.addView(back);
+
+        TextView label = text(title, TEXT, 16, true);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        labelParams.leftMargin = dp(8);
+        head.addView(label, labelParams);
+
+        if (action != null) {
+            TextView button = text(action, ACCENT, 12, true);
+            button.setPadding(dp(10), dp(8), dp(4), dp(8));
+            button.setClickable(true);
+            button.setOnClickListener(v -> onAction.run());
+            head.addView(button);
+        }
+        return head;
+    }
+
+    private void showCameraScreen() {
+        screen = "camera";
+        stopPolling();
+        stopCamera();
+        container.removeAllViews();
+        addBrandHeader();
+        container.addView(screenHeader("Камера ноутбука", "Стоп", this::showControlScreen), lpm(-1, -2, 12));
+
+        cameraStatus = text("Включаю камеру на ноутбуке…", MUTED, 12, false);
+        container.addView(cameraStatus, lpm(-1, -2, 8));
+
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackground(rounded(0xFF05060A, 18));
+        cameraView = new ImageView(this);
+        cameraView.setAdjustViewBounds(true);
+        cameraView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        cameraView.setMinimumHeight(dp(240));
+        frame.addView(cameraView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        container.addView(frame, lpm(-1, -2, 10));
+
+        container.addView(text("Кадры идут напрямую с ноутбука по Wi-Fi. Индикатор камеры на ноутбуке "
+                + "горит, пока идёт просмотр; после «Стоп» камера гаснет через несколько секунд.",
+                FAINT, 11, false), lpm(-1, -2, 12));
+
+        startCamera();
+    }
+
+    private void startCamera() {
+        cameraStopped = false;
+        cameraTask = new Runnable() {
+            @Override
+            public void run() {
+                if (cameraStopped || cameraView == null || cameraFetching) {
+                    return;
+                }
+                final String currentHost = host;
+                final String currentToken = token;
+                cameraFetching = true;
+                io.execute(() -> {
+                    try {
+                        byte[] jpeg = Api.frame(currentHost, currentToken);
+                        final Bitmap bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
+                        ui.post(() -> {
+                            cameraFetching = false;
+                            if (cameraStopped) {
+                                return;
+                            }
+                            if (bitmap == null) {
+                                if (cameraStatus != null) {
+                                    cameraStatus.setText("Не удалось декодировать кадр");
+                                }
+                            } else {
+                                if (cameraView != null) {
+                                    cameraView.setImageBitmap(bitmap);
+                                }
+                                if (cameraStatus != null) {
+                                    cameraStatus.setText("●  Смотрю камеру · " + bitmap.getWidth()
+                                            + "×" + bitmap.getHeight());
+                                    cameraStatus.setTextColor(MINT);
+                                }
+                            }
+                            ui.postDelayed(cameraTask, 400);
+                        });
+                    } catch (Exception exc) {
+                        ui.post(() -> {
+                            cameraFetching = false;
+                            if (cameraStopped) {
+                                return;
+                            }
+                            if (cameraStatus != null) {
+                                cameraStatus.setText(describe(exc));
+                                cameraStatus.setTextColor(DANGER);
+                            }
+                            if (isAuthError(exc)) {
+                                stopCamera();
+                                showConnectScreen();
+                                showError("Сессия истекла — войдите заново");
+                                return;
+                            }
+                            ui.postDelayed(cameraTask, 2000);
+                        });
+                    }
+                });
+            }
+        };
+        ui.post(cameraTask);
+    }
+
+    private void stopCamera() {
+        cameraStopped = true;
+        cameraFetching = false;
+        if (cameraTask != null) {
+            ui.removeCallbacks(cameraTask);
+            cameraTask = null;
+        }
+        cameraView = null;
+        cameraStatus = null;
+    }
+
+    // ---------------------------------------------------------- apps screen
+    private void showAppsScreen() {
+        screen = "apps";
+        stopPolling();
+        stopCamera();
+        container.removeAllViews();
+        addBrandHeader();
+        container.addView(screenHeader("Приложения", "Обновить", this::loadApps), lpm(-1, -2, 12));
+
+        appsStatus = text("Смотрю, что открыто на ноутбуке…", MUTED, 12, false);
+        container.addView(appsStatus, lpm(-1, -2, 8));
+
+        appsList = new LinearLayout(this);
+        appsList.setOrientation(LinearLayout.VERTICAL);
+        container.addView(appsList, lpm(-1, -2, 6));
+
+        container.addView(text("Закрытие работает как крестик в окне: программа получит запрос "
+                + "и сможет предложить сохранить файл. Системные процессы Windows закрыть нельзя.",
+                FAINT, 11, false), lpm(-1, -2, 14));
+
+        loadApps();
+    }
+
+    private void loadApps() {
+        if (appsStatus == null || appsList == null) {
+            return;
+        }
+        appsStatus.setText("Обновляю список…");
+        appsStatus.setTextColor(MUTED);
+        final String currentHost = host;
+        final String currentToken = token;
+        io.execute(() -> {
+            try {
+                JSONObject response = Api.apps(currentHost, currentToken);
+                ui.post(() -> renderApps(response));
+            } catch (Exception exc) {
+                ui.post(() -> {
+                    if (appsStatus != null) {
+                        appsStatus.setText(describe(exc));
+                        appsStatus.setTextColor(DANGER);
+                    }
+                    if (isAuthError(exc)) {
+                        showConnectScreen();
+                        showError("Сессия истекла — войдите заново");
+                    }
+                });
+            }
+        });
+    }
+
+    private void renderApps(JSONObject response) {
+        if (appsList == null || appsStatus == null) {
+            return;
+        }
+        appsList.removeAllViews();
+        JSONArray apps = response.optJSONArray("apps");
+        boolean supported = response.optBoolean("supported", true);
+        if (apps == null || apps.length() == 0) {
+            appsStatus.setText("На ноутбуке нет открытых приложений с окнами");
+            appsStatus.setTextColor(MUTED);
+            return;
+        }
+        appsStatus.setText(supported
+                ? apps.length() + " приложений открыто · нажмите «Закрыть», чтобы убрать"
+                : "Список открыт, но закрывать приложения может только Windows-версия");
+        appsStatus.setTextColor(MUTED);
+        for (int index = 0; index < apps.length(); index++) {
+            JSONObject app = apps.optJSONObject(index);
+            if (app == null) {
+                continue;
+            }
+            appsList.addView(appRow(app, supported), lpm(-1, -2, 8));
+        }
+    }
+
+    private View appRow(JSONObject app, boolean canClose) {
+        final int pid = app.optInt("pid", 0);
+        String name = app.optString("app", "приложение");
+        String title = app.optString("title", "");
+        boolean active = app.optBoolean("active", false);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackground(roundedStroke(CARD, 14, active ? ACCENT : BORDER));
+        row.setPadding(dp(14), dp(12), dp(12), dp(12));
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        TextView nameView = text(name, TEXT, 14, true);
+        texts.addView(nameView);
+        if (!title.isEmpty()) {
+            TextView titleView = text(title, MUTED, 11, false);
+            titleView.setMaxLines(2);
+            titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            texts.addView(titleView, lpm(-1, -2, 3));
+        }
+        texts.addView(text(active ? "●  активное окно" : "pid " + pid, active ? MINT : FAINT, 10, false),
+                lpm(-1, -2, 4));
+        LinearLayout.LayoutParams textsParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        textsParams.rightMargin = dp(10);
+        row.addView(texts, textsParams);
+
+        TextView close = text("Закрыть", canClose ? DANGER : FAINT, 12, true);
+        close.setGravity(Gravity.CENTER);
+        close.setPadding(dp(12), dp(9), dp(12), dp(9));
+        close.setBackground(roundedStroke(CARD_ALT, 10, BORDER));
+        close.setClickable(canClose);
+        close.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            close.setText("Закрываю…");
+            close.setTextColor(MUTED);
+            final String currentHost = host;
+            final String currentToken = token;
+            io.execute(() -> {
+                try {
+                    Api.closeApp(currentHost, currentToken, pid);
+                    ui.post(() -> {
+                        Toast.makeText(this, "Закрыто: " + name, Toast.LENGTH_SHORT).show();
+                        loadApps();
+                    });
+                } catch (Exception exc) {
+                    ui.post(() -> {
+                        close.setText("Закрыть");
+                        close.setTextColor(DANGER);
+                        Toast.makeText(this, describe(exc), Toast.LENGTH_LONG).show();
+                    });
+                }
+            });
+        });
+        row.addView(close);
+
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setOrientation(LinearLayout.VERTICAL);
+        wrapper.addView(row);
+        return wrapper;
     }
 
     // ------------------------------------------------------------- actions

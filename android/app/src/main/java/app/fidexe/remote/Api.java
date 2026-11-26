@@ -70,6 +70,57 @@ final class Api {
         return call(host, "/api/pair", "POST", body, null);
     }
 
+    /** Windows open on the desktop, the active one first. */
+    static JSONObject apps(String host, String token) throws ApiException {
+        return call(host, "/api/apps", "GET", null, token);
+    }
+
+    /** Ask the desktop to close an app the same way a click on X would. */
+    static void closeApp(String host, String token, int pid) throws ApiException {
+        JSONObject body = new JSONObject();
+        try {
+            body.put("pid", pid);
+        } catch (JSONException ignored) {
+        }
+        call(host, "/api/apps/close", "POST", body, token);
+    }
+
+    /** One JPEG frame from the laptop webcam. */
+    static byte[] frame(String host, String token) throws ApiException {
+        HttpURLConnection conn = null;
+        try {
+            String base = host.startsWith("http://") || host.startsWith("https://")
+                    ? host
+                    : "http://" + host;
+            URL url = new URL(base + "/api/camera/frame");
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(4000);
+            conn.setReadTimeout(8000);
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Authorization", "Bearer " + token);
+            int code = conn.getResponseCode();
+            InputStream stream = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+            if (code >= 400) {
+                String text = readAll(stream);
+                String message = "Камера недоступна";
+                try {
+                    message = new JSONObject(text).optString("error", message);
+                } catch (JSONException ignored) {
+                }
+                throw new ApiException(message);
+            }
+            return readBytes(stream);
+        } catch (ApiException exc) {
+            throw exc;
+        } catch (IOException exc) {
+            throw new ApiException("Нет связи с ноутбуком. Проверьте Wi-Fi и адрес");
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
     static JSONObject status(String host, String token) throws ApiException {
         return call(host, "/api/status", "GET", null, token);
     }
@@ -132,6 +183,20 @@ final class Api {
                 conn.disconnect();
             }
         }
+    }
+
+    private static byte[] readBytes(InputStream stream) throws IOException {
+        if (stream == null) {
+            return new byte[0];
+        }
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int read;
+        while ((read = stream.read(chunk)) > 0) {
+            buffer.write(chunk, 0, read);
+        }
+        stream.close();
+        return buffer.toByteArray();
     }
 
     private static String readAll(InputStream stream) throws IOException {

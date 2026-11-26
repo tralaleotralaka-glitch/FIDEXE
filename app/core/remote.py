@@ -8,6 +8,10 @@ Protocol (JSON over HTTP on the LAN, no internet involved):
     POST /api/auth/proof      {email, challenge, proof} -> {token, expires_in}
     GET  /api/status          (Bearer)   -> live statistics of the desktop
     POST /api/command         (Bearer)   -> {cmd: lock|sleep|pause|resume}
+    GET  /api/apps            (Bearer)   -> windows open on the desktop
+    POST /api/apps/close      (Bearer)   -> {pid} closes that app politely
+    GET  /api/camera/info     (Bearer)   -> camera availability / permission
+    GET  /api/camera/frame    (Bearer)   -> one JPEG frame of the webcam
 
 Two ways in:
 
@@ -36,6 +40,7 @@ from typing import Callable
 from PySide6.QtCore import QObject, Signal
 
 from . import power
+from .camera import CameraService, CameraUnavailable
 from .db import Storage
 from .paths import APP_NAME, APP_VERSION, data_dir
 
@@ -110,6 +115,10 @@ class RemoteError(Exception):
     """Authentication / request failure with a user facing message."""
 
 
+class AuthRequired(RemoteError):
+    """The request has no valid token: answered with 401."""
+
+
 class RemoteControl(QObject):
     """Threaded LAN server; all UI notifications go through Qt signals."""
 
@@ -125,12 +134,20 @@ class RemoteControl(QObject):
         store: Storage,
         status_provider: Callable[[int], dict],
         account_provider: Callable[[], int] | None = None,
+        camera: CameraService | None = None,
+        camera_allowed: Callable[[], bool] | None = None,
+        apps_provider: Callable[[], list[dict]] | None = None,
+        app_closer: Callable[[int], bool] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.store = store
         self.status_provider = status_provider
         self.account_provider = account_provider
+        self.camera = camera
+        self.camera_allowed = camera_allowed
+        self.apps_provider = apps_provider
+        self.app_closer = app_closer
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._zeroconf = None
@@ -395,8 +412,51 @@ class RemoteControl(QObject):
                 self._sessions.pop(key, None)
             session = self._sessions.get(token)
         if session is None:
-            raise RemoteError("Сессия истекла, войдите заново")
+            raise AuthRequired("Сессия истекла, войдите заново")
         return session
+
+    # ------------------------------------------------------ apps and camera
+    @property
+    def camera_enabled(self) -> bool:
+        return bool(self.camera_allowed()) if self.camera_allowed is not None else False
+
+    def apps(self) -> dict:
+        items = self.apps_provider() if self.apps_provider is not None else []
+        return {
+            "apps": items,
+            "supported": self.app_closer is not None,
+            "host": hostname(),
+        }
+
+    def close_app(self, pid: int, device: str) -> dict:
+        if self.app_closer is None:
+            raise RemoteError("Закрытие приложений работает только на Windows")
+        try:
+            pid_value = int(pid)
+        except (TypeError, ValueError):
+            raise RemoteError("Неизвестное приложение") from None
+        if pid_value <= 0:
+            raise RemoteError("Неизвестное приложение")
+        if not self.app_closer(pid_value):
+            raise RemoteError("Приложение не закрылось — возможно, оно уже закрыто")
+        log.info("Приложение закрыто с телефона: pid %s (%s)", pid_value, device)
+        self.command_done.emit("close_app", device)
+        return {"ok": True, "pid": pid_value}
+
+    def camera_info(self) -> dict:
+        info = self.camera.info() if self.camera is not None else {"supported": False}
+        info["allowed"] = self.camera_enabled
+        return info
+
+    def camera_frame(self) -> bytes:
+        if self.camera is None or not self.camera_enabled:
+            raise RemoteError(
+                "Просмотр камеры выключен: включите «Разрешить камеру» в настройках FIDEXE на ноутбуке"
+            )
+        try:
+            return self.camera.snapshot()
+        except CameraUnavailable as exc:
+            raise RemoteError(str(exc)) from None
 
     # --------------------------------------------------------------- commands
     def run_command(self, cmd: str, device: str) -> bool:
@@ -467,6 +527,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
         except OSError:
             pass
 
+    def _send_bytes(self, content_type: str, payload: bytes) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            self.wfile.write(payload)
+        except OSError:
+            pass
+
     def _body(self) -> dict:
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -488,7 +559,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _token(self) -> str:
         header = self.headers.get("Authorization") or ""
         if not header.lower().startswith("bearer "):
-            raise RemoteError("Требуется авторизация")
+            raise AuthRequired("Требуется авторизация")
         return header[7:].strip()
 
     def _session(self) -> Session:
@@ -505,10 +576,26 @@ class _RequestHandler(BaseHTTPRequestHandler):
             elif path == "/api/status":
                 session = self._session()
                 self._send(200, self.remote.status(session.user_id))
+            elif path == "/api/apps":
+                self._session()
+                self._send(200, self.remote.apps())
+            elif path == "/api/camera/info":
+                self._session()
+                self._send(200, self.remote.camera_info())
+            elif path == "/api/camera/frame":
+                self._session()
+                try:
+                    frame = self.remote.camera_frame()
+                except RemoteError as exc:
+                    self._send(403, {"error": str(exc)})
+                    return
+                self._send_bytes("image/jpeg", frame)
             else:
                 self._send(404, {"error": "Не найдено"})
-        except RemoteError as exc:
+        except AuthRequired as exc:
             self._send(401, {"error": str(exc)})
+        except RemoteError as exc:
+            self._send(400, {"error": str(exc)})
 
     def do_POST(self) -> None:  # noqa: N802
         path = self.path.split("?")[0].rstrip("/") or "/"
@@ -541,6 +628,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     ),
                 )
                 return
+            if path == "/api/apps/close":
+                session = self._session()
+                data = self._body()
+                self._send(200, self.remote.close_app(data.get("pid", 0), session.device))
+                return
             if path == "/api/command":
                 session = self._session()
                 data = self._body()
@@ -549,6 +641,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": ok, "cmd": cmd})
                 return
             self._send(404, {"error": "Не найдено"})
+        except AuthRequired as exc:
+            self._send(401, {"error": str(exc)})
         except RemoteError as exc:
             self._send(400, {"error": str(exc)})
         except Exception as exc:  # noqa: BLE001 - never leak a traceback to clients

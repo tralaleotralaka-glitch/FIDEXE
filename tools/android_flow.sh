@@ -54,6 +54,23 @@ sleep 10
 take_shot control.png
 python3 tools/android_ui.py dump > /tmp/ui-control.txt 2>&1 || true
 
+echo "== running apps on the laptop =="
+python3 tools/android_ui.py tap-text "Приложения" || step_failed "open apps"
+sleep 3
+take_shot apps.png
+python3 tools/android_ui.py tap-text "Закрыть" || step_failed "close an app"
+sleep 3
+take_shot apps-closed.png
+adb shell input keyevent 4   # back to the control panel
+sleep 2
+
+echo "== laptop camera =="
+python3 tools/android_ui.py tap-text "Камера ноутбука" || step_failed "open camera"
+sleep 4
+take_shot camera.png
+python3 tools/android_ui.py tap-text "Стоп" || step_failed "stop camera"
+sleep 2
+
 echo "== lock the laptop =="
 python3 tools/android_ui.py tap-text "Заблокировать ноутбук" || step_failed "tap lock"
 sleep 5
@@ -67,6 +84,18 @@ if grep -q "phone paired with code" /tmp/mock.log; then
     echo "RESULT: code login accepted by the desktop API"
 else
     step_failed "desktop never accepted the code"
+fi
+if grep -q "CLOSE APP" /tmp/mock.log; then
+    echo "RESULT: app closed from the phone"
+else
+    step_failed "no close-app request reached the desktop"
+fi
+FRAMES=$(curl -s --max-time 10 http://127.0.0.1:47811/api/state \
+    | python3 -c "import json,sys;print(json.load(sys.stdin).get('camera_frames',0))" 2>/dev/null || echo 0)
+if [ "${FRAMES:-0}" -gt 0 ]; then
+    echo "RESULT: camera frames served: $FRAMES"
+else
+    step_failed "the phone never fetched a camera frame"
 fi
 if grep -q "LOCK COMMAND RECEIVED" /tmp/mock.log; then
     echo "RESULT: lock command received"

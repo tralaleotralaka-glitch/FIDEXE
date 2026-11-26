@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import struct
+import zlib
 import hmac
 import json
 import secrets
@@ -34,7 +36,53 @@ def pair_code_for(window: int) -> str:
 def current_pair_code() -> str:
     return pair_code_for(int(time.time() // PAIR_PERIOD))
 CHALLENGES: dict[str, float] = {}
-STATE = {"locked": 0, "commands": [], "paused": False}
+STATE = {"locked": 0, "commands": [], "paused": False, "closed": []}
+
+APPS = [
+    {"pid": 101, "app": "chrome.exe", "title": "GitHub — FIDEXE (mock)", "active": True},
+    {"pid": 202, "app": "code.exe", "title": "MainActivity.java — Visual Studio Code", "active": False},
+    {"pid": 303, "app": "telegram.exe", "title": "Telegram", "active": False},
+    {"pid": 404, "app": "explorer.exe", "title": "Загрузки", "active": False},
+]
+
+
+def make_frame(frame: int, width: int = 640, height: int = 360) -> bytes:
+    """Tiny synthetic "webcam" frame so the phone has a real JPEG/PNG to render."""
+    rows = bytearray()
+    bar = (frame * 24) % width
+    for y in range(height):
+        rows.append(0)  # PNG filter: none
+        for x in range(width):
+            r = int(20 + 30 * y / height)
+            g = int(28 + 24 * x / width)
+            b = int(46 + 40 * y / height)
+            if abs(x - bar) < 40:
+                r, g, b = min(255, r + 90), min(255, g + 70), min(255, b + 120)
+            if (x // 80 + y // 80) % 2 == 0:
+                r, g, b = min(255, r + 8), min(255, g + 8), min(255, b + 10)
+            rows += bytes((r, g, b))
+    return png(width, height, bytes(rows))
+
+
+def png(width: int, height: int, raw: bytes) -> bytes:
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw, 6))
+        + chunk(b"IEND", b"")
+    )
+
+
+FRAMES = {"count": 0}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -73,10 +121,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         path = self.path.split("?")[0]
         if path == "/api/ping":
-            self._send(200, {"ok": True, "app": "FIDEXE", "version": "1.2.0"})
+            self._send(200, {"ok": True, "app": "FIDEXE", "version": "2.0.0"})
         elif path == "/api/info":
             self._send(200, {
-                "app": "FIDEXE", "version": "1.2.0", "protocol": 1,
+                "app": "FIDEXE", "version": "2.0.0", "protocol": 1,
                 "host": "DESKTOP-DEMO", "address": "127.0.0.1:47811",
                 "accounts": ["de***@fidexe.app"], "requires_account": False,
                 "pairing": True, "pair_code_ttl": PAIR_PERIOD,
@@ -99,6 +147,32 @@ class Handler(BaseHTTPRequestHandler):
                 "tracking": not STATE["paused"],
                 "locked_supported": True,
             })
+        elif path == "/api/apps":
+            if not self._authorised():
+                return
+            self._send(200, {
+                "apps": [a for a in APPS if a["pid"] not in [c["pid"] for c in STATE["closed"]]],
+                "supported": True,
+                "host": "DESKTOP-DEMO",
+            })
+        elif path == "/api/camera/info":
+            if not self._authorised():
+                return
+            self._send(200, {
+                "supported": True, "allowed": True, "active": True,
+                "width": 640, "height": 360, "fps": 8, "error": "",
+            })
+        elif path == "/api/camera/frame":
+            if not self._authorised():
+                return
+            FRAMES["count"] += 1
+            body = make_frame(FRAMES["count"])
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
         elif path == "/api/demo/code":
             # mock-only helper so the UI test can type the real current code
             self._send(200, {
@@ -106,7 +180,12 @@ class Handler(BaseHTTPRequestHandler):
                 "left": PAIR_PERIOD - int(time.time()) % PAIR_PERIOD,
             })
         elif path == "/api/state":
-            self._send(200, {"locked": STATE["locked"], "commands": STATE["commands"]})
+            self._send(200, {
+                "locked": STATE["locked"],
+                "commands": STATE["commands"],
+                "closed": STATE["closed"],
+                "camera_frames": FRAMES["count"],
+            })
         else:
             self._send(404, {"error": "Не найдено"})
 
@@ -152,6 +231,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             print("[mock] phone authenticated:", data.get("device"), flush=True)
             self._send(200, {"token": TOKEN, "expires_in": 7200, "account": EMAIL})
+            return
+        if path == "/api/apps/close":
+            if not self._authorised():
+                return
+            pid = int(data.get("pid", 0))
+            name = next((a["app"] for a in APPS if a["pid"] == pid), "?")
+            if not any(a["pid"] == pid for a in APPS):
+                self._send(400, {"error": "Приложение не закрылось — возможно, оно уже закрыто"})
+                return
+            print("[mock] CLOSE APP:", name, pid, flush=True)
+            STATE["closed"].append({"pid": pid, "app": name})
+            STATE["commands"].append("close_app")
+            self._send(200, {"ok": True, "pid": pid})
             return
         if path == "/api/command":
             if not self._authorised():

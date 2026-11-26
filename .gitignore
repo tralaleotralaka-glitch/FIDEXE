@@ -2,8 +2,7 @@
 __pycache__/
 *.py[cod]
 dist/
-build/*
-!build/version_info.txt
+build/
 *.log
 *.db
 *.db-wal

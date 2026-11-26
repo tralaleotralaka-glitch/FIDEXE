@@ -315,6 +315,21 @@ class SettingsPage(Page):
         code_row.addWidget(self.copy_code, 0, Qt.AlignVCenter)
         card.body.addLayout(code_row)
 
+        card.body.addWidget(hline())
+        self.camera_toggle = ToggleSwitch(bool(self.ctx.settings.get("camera_allowed", False)))
+        self.camera_toggle.toggled.connect(self._on_camera_toggle)
+        card.body.addWidget(
+            SettingsRow(
+                "Камера с телефона",
+                "телефон сможет смотреть веб-камеру этого ПК, пока переключатель включён",
+                self.camera_toggle,
+            )
+        )
+        self.camera_hint = QLabel("")
+        self.camera_hint.setObjectName("Faint")
+        self.camera_hint.setWordWrap(True)
+        card.body.addWidget(self.camera_hint)
+
         self.remote_hint = QLabel("")
         self.remote_hint.setObjectName("Faint")
         self.remote_hint.setWordWrap(True)
@@ -363,6 +378,21 @@ class SettingsPage(Page):
         else:
             self.remote_address.setText("—")
             self.remote_host.setText("Сервер выключен")
+        camera_supported = bool(getattr(self.ctx.camera, "supported", False))
+        if not camera_supported:
+            self.camera_toggle.setEnabled(False)
+            self.camera_hint.setText(
+                "Камера недоступна: в этой сборке нет модуля opencv — скачайте FIDEXE.exe с сайта релиза."
+            )
+        elif self.ctx.settings.get("camera_allowed", False):
+            self.camera_hint.setText(
+                "Камера включается только по запросу с телефона и гаснет через 25 секунд после "
+                "последнего кадра. Индикатор камеры на ноутбуке при этом горит."
+            )
+        else:
+            self.camera_hint.setText(
+                "Пока переключатель выключен, телефон получает отказ — это защита от случайного просмотра."
+            )
         if not power.lock_supported():
             self.remote_hint.setText("Блокировка работает только в Windows.")
             self.lock_test.setEnabled(False)
@@ -377,6 +407,14 @@ class SettingsPage(Page):
                 "ноутбука. Код действует минуту и работает только в вашей Wi-Fi сети; на телефоне "
                 "есть и вход по почте с паролем."
             )
+
+    def _on_camera_toggle(self, enabled: bool) -> None:
+        self.ctx.settings.set("camera_allowed", bool(enabled))
+        if enabled:
+            self.ctx.toast.emit("Камера доступна телефону", "ok")
+        else:
+            self.ctx.toast.emit("Доступ к камере с телефона выключен", "ok")
+        self._refresh_remote()
 
     def _on_remote_toggle(self, enabled: bool) -> None:
         ok = self.ctx.set_remote_enabled(enabled)
