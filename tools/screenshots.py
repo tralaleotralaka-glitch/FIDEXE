@@ -131,9 +131,10 @@ def main() -> int:
             app.processEvents()
         window.grab().save(str(OUT / f"{page_key}.png"))
 
-    # the phone card sits lower on the settings page: scroll it into view
+    # the phone card sits lower on the settings page: scroll it into view,
+    # anchoring on the last row so the code and the camera switch are both visible
     settings = window.pages["settings"]
-    settings.ensureWidgetVisible(settings.pair_code)
+    settings.ensureWidgetVisible(settings.camera_hint, 0, 40)
     for _ in range(3):
         app.processEvents()
     window.grab().save(str(OUT / "settings-phone.png"))
