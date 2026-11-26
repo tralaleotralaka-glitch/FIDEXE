@@ -214,7 +214,26 @@ def run_selftest(app: QApplication) -> int:
     return 0
 
 
+def run_camera_check() -> int:
+    """CI probe: is opencv bundled and can the webcam be opened? Never fatal."""
+    from .core.camera import CameraService, cv2
+
+    version = getattr(cv2, "__version__", "")
+    print(f"opencv: {version or 'MISSING'}")
+    if cv2 is None:
+        return 1
+    service = CameraService()
+    print("camera service:", "ready" if service.supported else "unsupported")
+    capture = cv2.VideoCapture(0)
+    opened = bool(capture.isOpened())
+    capture.release()
+    print("webcam device:", "found" if opened else "not found (normal on a headless runner)")
+    return 0
+
+
 def main() -> int:
+    if "--camera-check" in sys.argv:
+        return run_camera_check()
     setup_logging()
     logging.info("Запуск %s %s", APP_TITLE, APP_VERSION)
 

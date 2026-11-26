@@ -40,6 +40,14 @@ jobs:
       - name: Build single-file exe
         run: pyinstaller --noconfirm --clean build.spec
 
+      - name: Check the webcam module inside the exe
+        shell: pwsh
+        run: |
+          $output = & ".\dist\FIDEXE.exe" --camera-check 2>&1 | Out-String
+          Write-Host $output
+          if ($LASTEXITCODE -ne 0) { throw "opencv is not bundled into the exe" }
+          if ($output -notmatch "opencv: \d") { throw "opencv version was not reported" }
+
       - name: Headless self-test of the frozen app
         env:
           QT_QPA_PLATFORM: offscreen
