@@ -97,6 +97,7 @@ public class MainActivity extends Activity {
     private TextView trackingValue;
     private TextView logLine;
     private TextView pauseButton;
+    private TextView reconnectButton;
     private TextView lockButton;
 
     private Runnable pollTask;
@@ -209,8 +210,8 @@ public class MainActivity extends Activity {
         // ---- pairing code card
         LinearLayout codeCard = card();
         codeCard.addView(sectionTitle("Код с ноутбука"));
-        codeCard.addView(text("FIDEXE на ноутбуке → Настройки → «Телефон». "
-                + "Шесть цифр меняются каждую минуту.", MUTED, 12, false), lpm(-1, -2, 6));
+        codeCard.addView(text("FIDEXE на ноутбуке → «Настройки» → крупные 6 цифр внизу страницы. "
+                + "Они меняются каждую минуту.", MUTED, 12, false), lpm(-1, -2, 6));
         codeField = field("000 000", InputType.TYPE_CLASS_NUMBER);
         codeField.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         codeField.setLetterSpacing(0.28f);
@@ -244,7 +245,7 @@ public class MainActivity extends Activity {
 
         container.addView(text("Работает только в локальной сети: данные идут напрямую с телефона "
                 + "на ноутбук, интернет не нужен.", FAINT, 11, false), lpm(-1, -2, 16));
-        container.addView(text("FIDEXE Remote 2.1.0", FAINT, 11, false), lpm(-1, -2, 8));
+        container.addView(text("FIDEXE Remote 2.2.0", FAINT, 11, false), lpm(-1, -2, 8));
     }
 
     private void startDiscovery() {
@@ -255,26 +256,40 @@ public class MainActivity extends Activity {
         foundBox.removeAllViews();
         foundBox.addView(text("Ищу ноутбук в этой сети…", MUTED, 12, false));
         discoverButton.setEnabled(false);
+        discoverButton.setText("Ищу…");
         discovery = new Discovery(this, new Discovery.Listener() {
             @Override
             public void onFound(String name, String address) {
+                if (foundBox == null || hostField == null) {
+                    return;
+                }
                 foundBox.removeAllViews();
                 foundBox.addView(foundRow(name, address));
                 hostField.setText(address);
+                Toast.makeText(MainActivity.this, "Ноутбук найден: " + address, Toast.LENGTH_SHORT).show();
             }
 
             @Override
             public void onFinished() {
+                if (discoverButton == null || foundBox == null) {
+                    return;
+                }
                 discoverButton.setEnabled(true);
+                discoverButton.setText("Найти ноутбук в Wi-Fi");
                 if (foundBox.getChildCount() == 0) {
-                    foundBox.addView(text("Ноутбук не найден. Проверьте, что FIDEXE запущен и вы вошли "
-                            + "в аккаунт по почте, а устройства в одной Wi-Fi сети.", MUTED, 12, false));
+                    foundBox.addView(text("Ноутбук не найден. Проверьте, что FIDEXE запущен, вы вошли "
+                            + "в аккаунт по почте, а устройства в одной Wi-Fi сети. Можно ввести адрес "
+                            + "вручную, например 192.168.1.10:47811", MUTED, 12, false));
                 }
             }
 
             @Override
             public void onError(String message) {
+                if (discoverButton == null || foundBox == null) {
+                    return;
+                }
                 discoverButton.setEnabled(true);
+                discoverButton.setText("Найти ноутбук в Wi-Fi");
                 foundBox.removeAllViews();
                 foundBox.addView(text(message, MUTED, 12, false));
             }
@@ -439,6 +454,11 @@ public class MainActivity extends Activity {
         statusRow.setGravity(Gravity.CENTER_VERTICAL);
         statusLine = text("●  Проверяю связь…", MUTED, 13, true);
         statusRow.addView(statusLine, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        reconnectButton = text("Найти заново", ACCENT, 12, true);
+        reconnectButton.setPadding(dp(8), dp(6), dp(2), dp(6));
+        reconnectButton.setClickable(true);
+        reconnectButton.setOnClickListener(v -> reconnect());
+        statusRow.addView(reconnectButton);
         statusCard.addView(statusRow);
         container.addView(statusCard, lpm(-1, -2, 12));
 
@@ -546,16 +566,14 @@ public class MainActivity extends Activity {
                         JSONObject status = Api.status(currentHost, currentToken);
                         ui.post(() -> applyStatus(status));
                     } catch (Exception exc) {
+                        final boolean auth = isAuthError(exc);
                         ui.post(() -> {
                             if (statusLine != null) {
                                 statusLine.setText("●  Нет связи");
                                 statusLine.setTextColor(DANGER);
                             }
-                            if (isAuthError(exc)) {
-                                disconnectLaptop();
-                                showConnectScreen();
-                                showError("Сессия истекла — войдите заново");
-                                return;
+                            if (auth) {
+                                disconnectLaptop("Нужен новый код с ноутбука — прошлый больше не действует");
                             }
                         });
                     }
@@ -710,8 +728,7 @@ public class MainActivity extends Activity {
                             }
                             if (isAuthError(exc)) {
                                 stopCamera();
-                                showConnectScreen();
-                                showError("Сессия истекла — войдите заново");
+                                disconnectLaptop("Нужен новый код с ноутбука — прошлый больше не действует");
                                 return;
                             }
                             ui.postDelayed(cameraTask, 2000);
@@ -776,8 +793,7 @@ public class MainActivity extends Activity {
                         appsStatus.setTextColor(DANGER);
                     }
                     if (isAuthError(exc)) {
-                        showConnectScreen();
-                        showError("Сессия истекла — войдите заново");
+                        disconnectLaptop("Нужен новый код с ноутбука — прошлый больше не действует");
                     }
                 });
             }
@@ -891,9 +907,7 @@ public class MainActivity extends Activity {
                 ui.post(() -> {
                     log(describe(exc));
                     if (isAuthError(exc)) {
-                        disconnectLaptop();
-                        showConnectScreen();
-                        showError("Сессия истекла — войдите заново");
+                        disconnectLaptop("Нужен новый код с ноутбука — прошлый больше не действует");
                     }
                 });
             }
@@ -922,6 +936,10 @@ public class MainActivity extends Activity {
     }
 
     private void disconnectLaptop() {
+        disconnectLaptop("Отключено");
+    }
+
+    private void disconnectLaptop(String message) {
         stopPolling();
         token = "";
         prefs.edit().remove("token").apply();
@@ -930,6 +948,62 @@ public class MainActivity extends Activity {
             statusLine.setTextColor(MUTED);
         }
         showConnectScreen();
+        showError(message);
+    }
+
+    /**
+     * Looks for the laptop again — the router may have handed it a new address
+     * after a reboot — and falls back to the saved one.
+     */
+    private void reconnect() {
+        if (discovery != null) {
+            discovery.stop();
+            discovery = null;
+        }
+        if (statusLine != null) {
+            statusLine.setText("●  Ищу ноутбук…");
+            statusLine.setTextColor(MUTED);
+        }
+        log("Ищу ноутбук в этой Wi-Fi сети…");
+        discovery = new Discovery(this, new Discovery.Listener() {
+            @Override
+            public void onFound(String name, String address) {
+                host = address;
+                if (name != null && !name.isEmpty()) {
+                    laptopName = name;
+                }
+                prefs.edit().putString("host", host).putString("laptop", laptopName).apply();
+                if (laptopLabel != null) {
+                    laptopLabel.setText(laptopName);
+                }
+                if (addressLine != null) {
+                    addressLine.setText(host);
+                }
+                if (statusLine != null) {
+                    statusLine.setText("●  Проверяю связь…");
+                    statusLine.setTextColor(MUTED);
+                }
+                log("Ноутбук снова найден: " + address);
+                refreshOnce();
+            }
+
+            @Override
+            public void onFinished() {
+                if (statusLine != null && "●  Ищу ноутбук…".equals(String.valueOf(statusLine.getText()))) {
+                    statusLine.setText("●  Нет связи");
+                    statusLine.setTextColor(DANGER);
+                }
+                log("Ноутбук не найден. Проверьте, что FIDEXE запущен, вы вошли в аккаунт "
+                        + "и телефон в той же Wi-Fi сети");
+                refreshOnce();
+            }
+
+            @Override
+            public void onError(String message) {
+                log(message);
+            }
+        });
+        discovery.start(4000);
     }
 
     // --------------------------------------------------------------- helpers
@@ -978,9 +1052,9 @@ public class MainActivity extends Activity {
         builder.setMessage("1. Запустите FIDEXE на ноутбуке и войдите по почте — сервер для телефона "
                 + "стартует сам.\n\n"
                 + "2. Телефон и ноутбук должны быть в одной Wi-Fi сети.\n\n"
-                + "3. На телефоне нажмите «Найти ноутбук в Wi-Fi» или введите адрес "
-                + "вида 192.168.1.10:47811.\n\n"
-                + "4. На ноутбуке: Настройки → «Телефон» — там шесть цифр, "
+                + "3. На телефоне нажмите «Найти ноутбук в Wi-Fi» — адрес подставится сам. "
+                + "Если сеть прячет ноутбук, введите адрес вида 192.168.1.10:47811.\n\n"
+                + "4. На ноутбуке откройте «Настройки»: внизу страницы крупные шесть цифр, "
                 + "они меняются каждую минуту.\n\n"
                 + "5. Введите эти цифры на телефоне и нажмите «Войти по коду» — откроется пульт. "
                 + "Можно войти и почтой с паролем того же аккаунта.\n\n"
@@ -1027,8 +1101,13 @@ public class MainActivity extends Activity {
     }
 
     private static boolean isAuthError(Exception exc) {
-        String message = describe(exc).toLowerCase();
-        return message.contains("сессия") || message.contains("авторизация");
+        if (exc instanceof Api.ApiException) {
+            Api.ApiException api = (Api.ApiException) exc;
+            if (api.code == 401) {
+                return true;
+            }
+        }
+        return describe(exc).toLowerCase().contains("сессия");
     }
 
     private static String describe(Exception exc) {

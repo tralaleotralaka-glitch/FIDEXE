@@ -131,7 +131,7 @@ def main() -> int:
 
     # the code card sits lower on the settings page: scroll it into view
     settings = window.pages["settings"]
-    settings.ensureWidgetVisible(settings.pair_hint, 0, 40)
+    settings.ensureWidgetVisible(settings.pair_code, 0, 60)
     for _ in range(3):
         app.processEvents()
     window.grab().save(str(OUT / "settings-phone.png"))

@@ -31,6 +31,8 @@ import logging
 import os
 import secrets
 import socket
+import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -49,7 +51,12 @@ log = logging.getLogger(__name__)
 SERVICE_TYPE = "_fidexe._tcp.local."
 DEFAULT_PORT = 47811
 PROTOCOL = 1
-TOKEN_TTL = 2 * 3600
+TOKEN_TTL = 30 * 86400         # a paired phone stays paired for a month
+TOKEN_TTL_PASSWORD = 2 * 3600  # password logins are shorter lived
+DISCOVERY_PORT = 47812         # UDP "where is the laptop" beacon
+DISCOVERY_MAGIC = b"FIDEXE"
+SESSIONS_FILE = "remote_sessions.json"
+FIREWALL_RULE = "FIDEXE Remote"
 CHALLENGE_TTL = 120
 PAIR_CODE_PERIOD = 60          # seconds a pairing code stays valid
 PAIR_CODE_DIGITS = 6
@@ -80,6 +87,100 @@ def hostname() -> str:
         return socket.gethostname().split(".")[0]
     except OSError:
         return "DESKTOP"
+
+
+def lan_ips() -> list[str]:
+    """Every IPv4 address of this machine that a phone in the LAN could reach."""
+    found: list[str] = []
+    primary = local_ip()
+    if primary and not primary.startswith("127."):
+        found.append(primary)
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            address = str(info[4][0])
+            if address.startswith("127.") or address in found:
+                continue
+            found.append(address)
+    except OSError:
+        pass
+    return found or ["127.0.0.1"]
+
+
+def _netsh(args: list[str]) -> tuple[int, str]:
+    """Run netsh without a console window; returns (exit code, output)."""
+    flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+    try:
+        done = subprocess.run(
+            ["netsh", *args], capture_output=True, text=True, timeout=25, creationflags=flags
+        )
+        return done.returncode, (done.stdout or "") + (done.stderr or "")
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 1, str(exc)
+
+
+def firewall_supported() -> bool:
+    return sys.platform == "win32"
+
+
+def firewall_rule_present() -> bool:
+    if not firewall_supported():
+        return False
+    code, _ = _netsh(["advfirewall", "firewall", "show", "rule", f"name={FIREWALL_RULE}"])
+    return code == 0
+
+
+def ensure_firewall_rule(port: int = DEFAULT_PORT) -> str:
+    """Open the LAN port in Windows Firewall.
+
+    Returns ``ok`` (the rule was already there), ``created`` (we added it),
+    ``blocked`` (Windows said no, the app is not elevated) or ``skipped``
+    (not Windows).  Without the rule the phone cannot reach the laptop at all,
+    which is the single most common reason "it does not work".
+    """
+    if not firewall_supported():
+        return "skipped"
+    if firewall_rule_present():
+        return "ok"
+    program = sys.executable
+    for profile in ("private", "domain"):
+        code, output = _netsh(
+            [
+                "advfirewall",
+                "firewall",
+                "add",
+                "rule",
+                f"name={FIREWALL_RULE}",
+                "dir=in",
+                "action=allow",
+                f"program={program}",
+                "enable=yes",
+                f"profile={profile}",
+            ]
+        )
+        if code == 0:
+            continue
+        log.info("Брандмауэр не дал добавить правило (%s): %s", profile, output.strip()[:200])
+        return "blocked"
+    log.info("Брандмауэр Windows: правило для порта %s добавлено", port)
+    return "created"
+
+
+def add_firewall_rule_elevated() -> bool:
+    """Ask Windows for permission and add the rule (shows the UAC prompt)."""
+    if not firewall_supported():
+        return False
+    import ctypes
+
+    params = (
+        f'advfirewall firewall add rule name="{FIREWALL_RULE}" dir=in action=allow '
+        f'program="{sys.executable}" enable=yes profile=private,domain'
+    )
+    try:
+        result = ctypes.windll.shell32.ShellExecuteW(None, "runas", "netsh", params, None, 1)
+        return int(result) > 32
+    except Exception:  # noqa: BLE001 - never break the app because of the firewall
+        log.exception("Не удалось открыть брандмауэр с правами администратора")
+        return False
 
 
 def pair_code_for(secret: bytes, window: int) -> str:
@@ -157,6 +258,10 @@ class RemoteControl(QObject):
         self._failures: dict[str, list[float]] = {}
         self._port = DEFAULT_PORT
         self._pair_secret: bytes | None = None
+        self._udp: socket.socket | None = None
+        self._udp_thread: threading.Thread | None = None
+        self._persisted: dict[str, dict] = {}
+        self.firewall_state = "unknown"
         self.action_override: Callable[[str], bool] | None = None
 
     # ------------------------------------------------------------------ state
@@ -178,16 +283,26 @@ class RemoteControl(QObject):
             return sum(1 for s in self._sessions.values() if s.expires > now)
 
     # ------------------------------------------------------------- lifecycle
+    def _open_server(self, port: int) -> ThreadingHTTPServer | None:
+        """Bind the first free port: the app must come up even if 47811 is taken."""
+        wanted = int(port or DEFAULT_PORT)
+        candidates = [wanted] + [p for p in range(DEFAULT_PORT, DEFAULT_PORT + 10) if p != wanted]
+        for candidate in candidates:
+            try:
+                return ThreadingHTTPServer(("0.0.0.0", candidate), _RequestHandler)
+            except OSError as exc:
+                log.warning("Порт %s занят: %s", candidate, exc)
+        return None
+
     def start(self, port: int = DEFAULT_PORT) -> bool:
         with self._lock:
             if self._server is not None:
                 return True
-            self._port = int(port or DEFAULT_PORT)
-            try:
-                server = ThreadingHTTPServer(("0.0.0.0", self._port), _RequestHandler)
-            except OSError as exc:
-                log.error("Не удалось запустить LAN-сервер на порту %s: %s", self._port, exc)
+            server = self._open_server(port)
+            if server is None:
+                log.error("Не удалось открыть ни один порт для телефона")
                 return False
+            self._port = int(server.server_address[1])
             server.daemon_threads = True
             server.remote = self  # type: ignore[attr-defined]
             self._server = server
@@ -195,12 +310,18 @@ class RemoteControl(QObject):
                 target=server.serve_forever, kwargs={"poll_interval": 0.4}, daemon=True, name="fidexe-remote"
             )
             self._thread.start()
+        self._load_sessions()
         self._register_mdns()
-        log.info("LAN-сервер запущен на %s", self.address)
+        self._start_discovery()
+        self.firewall_state = ensure_firewall_rule(self._port)
+        if self.firewall_state == "blocked":
+            log.warning("Брандмауэр Windows блокирует телефон: нужно разрешить FIDEXE в сети")
+        log.info("LAN-сервер запущен на %s (брандмауэр: %s)", self.address, self.firewall_state)
         self.started.emit(local_ip(), self._port)
         return True
 
     def stop(self) -> None:
+        self._stop_discovery()
         self._unregister_mdns()
         with self._lock:
             server = self._server
@@ -254,6 +375,132 @@ class RemoteControl(QObject):
             zc.close()
         except Exception:  # noqa: BLE001
             pass
+
+    # -------------------------------------------------------------- discovery
+    def discovery_info(self) -> dict:
+        """What the phone learns when it shouts "FIDEXE" on the LAN."""
+        return {
+            "app": "FIDEXE",
+            "protocol": PROTOCOL,
+            "version": APP_VERSION,
+            "host": hostname(),
+            "port": self._port,
+            "address": f"{local_ip()}:{self._port}",
+            "ips": lan_ips(),
+            "account": self.pair_account_hint(),
+        }
+
+    def pair_account_hint(self) -> str:
+        row = self._account_row()
+        return mask_email(str(row["email"])) if row is not None else ""
+
+    def _start_discovery(self) -> None:
+        if self._udp is not None:
+            return
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if hasattr(socket, "SO_REUSEPORT"):
+                try:
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except OSError:
+                    pass
+            sock.bind(("", DISCOVERY_PORT))
+            sock.settimeout(0.4)
+        except OSError as exc:
+            log.warning("UDP-поиск с телефона не включился (порт %s): %s", DISCOVERY_PORT, exc)
+            return
+        self._udp = sock
+        self._udp_thread = threading.Thread(
+            target=self._serve_discovery, args=(sock,), daemon=True, name="fidexe-discovery"
+        )
+        self._udp_thread.start()
+        log.info("Поиск ноутбука с телефона: UDP %s", DISCOVERY_PORT)
+
+    def _serve_discovery(self, sock: socket.socket) -> None:
+        while True:
+            with self._lock:
+                if self._udp is not sock:
+                    break
+            try:
+                data, address = sock.recvfrom(512)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not data[:6].upper().startswith(DISCOVERY_MAGIC):
+                continue
+            try:
+                sock.sendto(json.dumps(self.discovery_info()).encode("utf-8"), address)
+            except OSError:
+                break
+
+    def stop_discovery(self) -> None:
+        self._stop_discovery()
+
+    def _stop_discovery(self) -> None:
+        sock = self._udp
+        self._udp = None
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+            log.info("UDP-поиск с телефона остановлен")
+
+    # ------------------------------------------------------------ sessions db
+    def _sessions_path(self):
+        return data_dir() / SESSIONS_FILE
+
+    @staticmethod
+    def _token_key(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _load_sessions(self) -> None:
+        """A paired phone stays paired after the desktop app restarts."""
+        path = self._sessions_path()
+        now = time.time()
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(raw, dict):
+            return
+        with self._lock:
+            self._persisted = {
+                str(key): value
+                for key, value in raw.items()
+                if isinstance(value, dict) and float(value.get("expires", 0)) > now
+            }
+            known = len(self._persisted)
+        if known:
+            log.info("Сохранённых телефонов: %s", known)
+
+    def _flush_sessions(self) -> None:
+        with self._lock:
+            snapshot = dict(self._persisted)
+        try:
+            self._sessions_path().write_text(json.dumps(snapshot), encoding="utf-8")
+        except OSError:
+            log.warning("Не удалось сохранить список подключённых телефонов")
+
+    def _remember(self, token: str, session: Session) -> None:
+        key = self._token_key(token)
+        with self._lock:
+            self._persisted[key] = {
+                "user_id": session.user_id,
+                "email": session.email,
+                "device": session.device,
+                "created": session.created,
+                "expires": session.expires,
+            }
+        self._flush_sessions()
+
+    def forget_all_sessions(self) -> None:
+        with self._lock:
+            self._sessions.clear()
+            self._persisted.clear()
+        self._flush_sessions()
 
     # ---------------------------------------------------------- pairing code
     def pair_secret(self) -> bytes:
@@ -382,9 +629,9 @@ class RemoteControl(QObject):
             raise RemoteError("Неверный пароль")
         self._clear_failures(client)
         log.info("Телефон подключён: %s (%s)", (device or "Android")[:60], mask_email(row["email"]))
-        return self._start_session(row, device)
+        return self._start_session(row, device, ttl=TOKEN_TTL_PASSWORD)
 
-    def _start_session(self, row, device: str) -> dict:
+    def _start_session(self, row, device: str, ttl: int = TOKEN_TTL) -> dict:
         token = secrets.token_urlsafe(32)
         now = time.time()
         session = Session(
@@ -392,16 +639,19 @@ class RemoteControl(QObject):
             email=row["email"],
             device=(device or "Android")[:60],
             created=now,
-            expires=now + TOKEN_TTL,
+            expires=now + ttl,
         )
         with self._lock:
             self._sessions[token] = session
+        # remembering the phone keeps it paired after a reboot or an app update
+        self._remember(token, session)
         self.client_authenticated.emit(session.email, session.device)
         return {
             "token": token,
-            "expires_in": TOKEN_TTL,
+            "expires_in": ttl,
             "account": session.email,
             "host": hostname(),
+            "paired": ttl >= TOKEN_TTL,
         }
 
     def session_for(self, token: str) -> Session:
@@ -411,8 +661,25 @@ class RemoteControl(QObject):
             for key in stale:
                 self._sessions.pop(key, None)
             session = self._sessions.get(token)
-        if session is None:
+            if session is not None:
+                return session
+            record = self._persisted.get(self._token_key(token))
+        if record is None:
             raise AuthRequired("Сессия истекла, войдите заново")
+        if float(record.get("expires", 0)) < now:
+            with self._lock:
+                self._persisted.pop(self._token_key(token), None)
+            self._flush_sessions()
+            raise AuthRequired("Сессия истекла, войдите заново")
+        session = Session(
+            user_id=int(record.get("user_id", 0)),
+            email=str(record.get("email", "")),
+            device=str(record.get("device", "Android")),
+            created=float(record.get("created", now)),
+            expires=float(record.get("expires", now)),
+        )
+        with self._lock:
+            self._sessions[token] = session
         return session
 
     # ------------------------------------------------------ apps and camera

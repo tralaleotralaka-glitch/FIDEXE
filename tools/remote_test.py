@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import os
+import socket
 import sys
 import tempfile
 import urllib.error
@@ -268,6 +269,39 @@ def main() -> int:
     check("frame delivered", status == 200 and ctype.startswith("image/jpeg"), f"{status} {ctype}")
     check("frame looks like a jpeg", body.startswith(b"\xff\xd8") and body.endswith(b"\xff\xd9"), str(body[:8]))
     check("frame needs auth", request_raw("/api/camera/frame")[0] == 401)
+
+    print("[discovery]")
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.settimeout(3.0)
+    try:
+        probe.sendto(b"FIDEXE?", ("127.0.0.1", remote_mod.DISCOVERY_PORT))
+        reply, _ = probe.recvfrom(4096)
+    except OSError as exc:
+        reply = b""
+        check("UDP discovery answers", False, str(exc))
+    else:
+        found = json.loads(reply.decode("utf-8"))
+        check("UDP discovery answers", found.get("app") == "FIDEXE", str(found)[:120])
+        check("UDP discovery reports the port", found.get("port") == PORT, str(found.get("port")))
+        check("UDP discovery reports the laptop", bool(found.get("host")), str(found.get("host")))
+        check("UDP discovery reports an address", ":" in str(found.get("address", "")), str(found.get("address")))
+        check("UDP discovery lists the LAN ips", isinstance(found.get("ips"), list) and found["ips"],
+              str(found.get("ips")))
+    finally:
+        probe.close()
+    check("firewall state is known",
+          ctx.remote.firewall_state in {"ok", "created", "blocked", "skipped"},
+          ctx.remote.firewall_state)
+
+    print("[a paired phone survives a restart]")
+    keep_token = code_token
+    ctx.set_remote_enabled(False)
+    check("server stopped for the restart", not ctx.remote.running)
+    check("server starts again", ctx.set_remote_enabled(True))
+    code, status_after = request("/api/status", token=keep_token)
+    check("old phone token still works after restart", code == 200, f"{code} {status_after}")
+    check("sessions are stored on disk", (Path(TMP) / "FIDEXE" / "remote_sessions.json").exists()
+          or any(p.name == "remote_sessions.json" for p in Path(TMP).rglob("remote_sessions.json")))
 
     print("[teardown]")
     ctx.set_remote_enabled(False)

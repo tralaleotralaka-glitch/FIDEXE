@@ -121,10 +121,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         path = self.path.split("?")[0]
         if path == "/api/ping":
-            self._send(200, {"ok": True, "app": "FIDEXE", "version": "2.1.0"})
+            self._send(200, {"ok": True, "app": "FIDEXE", "version": "2.2.0"})
         elif path == "/api/info":
             self._send(200, {
-                "app": "FIDEXE", "version": "2.1.0", "protocol": 1,
+                "app": "FIDEXE", "version": "2.2.0", "protocol": 1,
                 "host": "DESKTOP-DEMO", "address": "127.0.0.1:47811",
                 "accounts": ["de***@fidexe.app"], "requires_account": False,
                 "pairing": True, "pair_code_ttl": PAIR_PERIOD,

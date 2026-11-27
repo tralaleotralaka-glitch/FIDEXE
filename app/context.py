@@ -1,19 +1,22 @@
 """Application context: shared services and cross-window signals."""
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Signal
-
+import logging
 import time
 from datetime import date, datetime
 
+from PySide6.QtCore import QObject, Signal
+
 from .core.auth import AuthService
-from .core import processes
+from .core import processes, remote as remote_mod
 from .core.camera import CameraService
 from .core.clipboard_watch import ClipboardWatcher
 from .core.db import Storage
 from .core.remote import RemoteControl
 from .core.settings import Settings
 from .core.usage_tracker import UsageTracker
+
+log = logging.getLogger(__name__)
 
 
 class AppContext(QObject):
@@ -107,7 +110,30 @@ class AppContext(QObject):
     def start_remote(self) -> bool:
         if self.remote.running:
             return True
-        return self.remote.start(int(self.settings.get("remote_port", 47811)))
+        started = self.remote.start(int(self.settings.get("remote_port", 47811)))
+        if started and self.remote.firewall_state == "blocked":
+            log.warning("Windows Firewall блокирует телефон — правило не добавлено")
+            self.toast.emit(
+                "Телефон не подключится, пока Windows блокирует FIDEXE: меню → «Разрешить доступ с телефона»",
+                "warn",
+            )
+        return started
+
+    @property
+    def remote_needs_firewall(self) -> bool:
+        return self.remote.running and self.remote.firewall_state == "blocked"
+
+    def fix_firewall(self) -> bool:
+        """Ask Windows (UAC) to let the phone reach this computer."""
+        if not remote_mod.firewall_supported():
+            self.toast.emit("Брандмауэр настраивается только в Windows", "warn")
+            return False
+        if remote_mod.add_firewall_rule_elevated():
+            self.remote.firewall_state = "pending"
+            self.toast.emit("Подтвердите запрос Windows — после этого телефон подключится", "ok")
+            return True
+        self.toast.emit("Windows не открыл запрос брандмауэра", "error")
+        return False
 
     def stop_remote(self) -> None:
         self.remote.stop()

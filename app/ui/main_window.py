@@ -285,6 +285,12 @@ class MainWindow(QMainWindow):
         self.menu_pause.triggered.connect(self._toggle_pause)
         menu.addAction(self.menu_pause)
 
+        if self.ctx.remote_needs_firewall:
+            firewall_action = QAction("Разрешить доступ с телефона (брандмауэр)…", menu)
+            firewall_action.triggered.connect(self.ctx.fix_firewall)
+            menu.addAction(firewall_action)
+            menu.addSeparator()
+
         theme_menu = menu.addMenu("Тема оформления")
         group = QActionGroup(theme_menu)
         for key, label in (("dark", "Тёмная"), ("light", "Светлая")):

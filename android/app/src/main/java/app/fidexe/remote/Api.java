@@ -22,10 +22,25 @@ final class Api {
 
     static final String SERVICE_TYPE = "_fidexe._tcp.";
     static final int DEFAULT_PORT = 47811;
+    /** UDP port the desktop answers "where are you" broadcasts on. */
+    static final int DISCOVERY_PORT = 47812;
+    static final String DISCOVERY_MAGIC = "FIDEXE?";
 
     static class ApiException extends Exception {
+        /** HTTP status, or 0 when the laptop could not be reached at all. */
+        final int code;
+
         ApiException(String message) {
+            this(0, message);
+        }
+
+        ApiException(int code, String message) {
             super(message);
+            this.code = code;
+        }
+
+        boolean isAuth() {
+            return code == 401;
         }
     }
 
@@ -107,13 +122,13 @@ final class Api {
                     message = new JSONObject(text).optString("error", message);
                 } catch (JSONException ignored) {
                 }
-                throw new ApiException(message);
+                throw new ApiException(code, message);
             }
             return readBytes(stream);
         } catch (ApiException exc) {
             throw exc;
         } catch (IOException exc) {
-            throw new ApiException("Нет связи с ноутбуком. Проверьте Wi-Fi и адрес");
+            throw new ApiException("Ноутбук не отвечает. Проверьте, что он включён и в той же Wi-Fi сети");
         } finally {
             if (conn != null) {
                 conn.disconnect();
@@ -171,13 +186,14 @@ final class Api {
                 throw new ApiException("Неожиданный ответ ноутбука");
             }
             if (code >= 400) {
-                throw new ApiException(json.optString("error", "Ошибка " + code));
+                throw new ApiException(code, json.optString("error", "Ошибка " + code));
             }
             return json;
         } catch (ApiException exc) {
             throw exc;
         } catch (IOException exc) {
-            throw new ApiException("Нет связи с ноутбуком. Проверьте Wi-Fi и адрес");
+            throw new ApiException("Ноутбук не отвечает. Проверьте, что он включён, в той же Wi-Fi "
+                    + "сети и что Windows разрешает FIDEXE доступ в сети");
         } finally {
             if (conn != null) {
                 conn.disconnect();

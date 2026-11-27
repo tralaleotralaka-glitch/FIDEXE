@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...context import AppContext
-from ...core import autostart, remote
+from ...core import autostart
 from ...core.auth import AuthError
 from ...core.exporter import export_json, export_usage_csv
 from ...core.paths import APP_TITLE, APP_VERSION, data_dir
@@ -253,23 +253,20 @@ class SettingsPage(Page):
         )
 
     def _build_remote(self) -> None:
-        card = self._card("Телефон", "введите эти 6 цифр в FIDEXE Remote на Android", "lock")
+        """The phone card holds nothing but the six digits the phone asks for."""
+        card = Card("", "", None)
+        card.body.setContentsMargins(18, 26, 18, 30)
+        self.v.addWidget(card)
 
         self.pair_code = QLabel("— — —")
         self.pair_code.setAlignment(Qt.AlignCenter)
         self.pair_code.setStyleSheet(
             f"font-family: 'Cascadia Mono','Consolas','DejaVu Sans Mono',monospace;"
-            f" font-size: 48px; font-weight: 800; letter-spacing: 10px; color: {self.p['accent']};"
-            f" padding: 10px 0 2px 0;"
+            f" font-size: 72px; font-weight: 800; letter-spacing: 14px;"
+            f" color: {self.p['accent']}; background: transparent; border: none;"
         )
         self.pair_code.setTextInteractionFlags(Qt.TextSelectableByMouse)
         card.body.addWidget(self.pair_code)
-
-        self.pair_hint = QLabel("")
-        self.pair_hint.setObjectName("Subtitle")
-        self.pair_hint.setAlignment(Qt.AlignCenter)
-        self.pair_hint.setWordWrap(True)
-        card.body.addWidget(self.pair_hint)
 
         self._code_timer = QTimer(self)
         self._code_timer.setInterval(1000)
@@ -278,18 +275,11 @@ class SettingsPage(Page):
         self._refresh_pair_code()
 
     def _refresh_pair_code(self) -> None:
-        if not self.ctx.user_id:
+        if not self.ctx.user_id or not self.ctx.remote.running:
             self.pair_code.setText("— — —")
-            self.pair_hint.setText("Войдите в аккаунт по почте — код появится здесь")
             return
-        if not self.ctx.remote.running:
-            self.pair_code.setText("— — —")
-            self.pair_hint.setText("Сервер для телефона не запустился: возможно, порт 47811 занят")
-            return
-        current = self.ctx.remote.pair_code()
-        self.pair_code.setText(remote.format_pair_code(current))
-        left = self.ctx.remote.pair_remaining()
-        self.pair_hint.setText(f"Новый код через {left} с · ноутбук и телефон в одной Wi-Fi сети")
+        digits = self.ctx.remote.pair_code()
+        self.pair_code.setText(digits if len(digits) == 6 else "— — —")
 
     def _build_data(self) -> None:
         card = self._card("Данные", "", "shield")

@@ -56,6 +56,31 @@ sleep 10
 take_shot control.png
 python3 tools/android_ui.py dump > /tmp/ui-control.txt 2>&1 || true
 
+echo "== the phone remembers the laptop after a restart =="
+adb shell am force-stop app.fidexe.remote
+sleep 1
+adb shell am start -n app.fidexe.remote/.MainActivity || step_failed "restart app"
+sleep 7
+python3 tools/android_ui.py dump > /tmp/ui-relaunch.txt 2>&1 || true
+if grep -q "Заблокировать ноутбук" /tmp/ui-relaunch.txt && grep -q "На связи" /tmp/ui-relaunch.txt; then
+    echo "RESULT: the phone stayed paired after a restart"
+else
+    step_failed "the app forgot the laptop after a restart"
+    head -n 40 /tmp/ui-relaunch.txt || true
+fi
+take_shot remember.png
+
+echo "== reconnecting when the laptop address changes =="
+python3 tools/android_ui.py tap-exact "Найти заново" || step_failed "tap reconnect"
+sleep 8
+python3 tools/android_ui.py dump > /tmp/ui-reconnect.txt 2>&1 || true
+if grep -q "Заблокировать ноутбук" /tmp/ui-reconnect.txt; then
+    echo "RESULT: the panel survived a reconnect"
+else
+    step_failed "reconnect left the app on an empty screen"
+    head -n 40 /tmp/ui-reconnect.txt || true
+fi
+
 echo "== running apps on the laptop =="
 python3 tools/android_ui.py tap-text "Приложения" || step_failed "open apps"
 sleep 3
