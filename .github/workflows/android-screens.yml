@@ -99,10 +99,12 @@ jobs:
             git pull --rebase --quiet origin "${GITHUB_REF_NAME}" || true
             if timeout 90 git push origin "HEAD:${GITHUB_REF_NAME}"; then
               echo "pushed on attempt ${attempt}"
-              break
+              exit 0
             fi
             sleep 10
           done
+          echo "::error::the screenshots were produced but could not be pushed"
+          exit 1
 
       - name: Commit screenshots
         if: always()
@@ -120,7 +122,9 @@ jobs:
             git pull --rebase --quiet origin "${GITHUB_REF_NAME}" || true
             if timeout 90 git push origin "HEAD:${GITHUB_REF_NAME}"; then
               echo "pushed on attempt ${attempt}"
-              break
+              exit 0
             fi
             sleep 10
           done
+          echo "::error::the screenshots were produced but could not be pushed"
+          exit 1
