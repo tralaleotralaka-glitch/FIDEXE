@@ -118,12 +118,22 @@ jobs:
           fi
           git diff --cached --stat
           git commit -m "docs: android UI screenshots [skip ci]"
+          export GIT_TERMINAL_PROMPT=0
           for attempt in 1 2 3 4; do
-            git pull --rebase --quiet origin "${GITHUB_REF_NAME}" || true
-            if timeout 90 git push origin "HEAD:${GITHUB_REF_NAME}"; then
+            git rebase --abort >/dev/null 2>&1 || true
+            fetch_log=$(timeout 60 git fetch origin "${GITHUB_REF_NAME}" 2>&1) \
+              || echo "::error title=fetch ${attempt}::${fetch_log}"
+            rebase_log=$(timeout 60 git rebase "origin/${GITHUB_REF_NAME}" 2>&1) || {
+              echo "::error title=rebase ${attempt}::${rebase_log}"
+              git rebase --abort >/dev/null 2>&1 || true
+              sleep 5
+              continue
+            }
+            push_log=$(timeout 90 git push origin "HEAD:${GITHUB_REF_NAME}" 2>&1) && {
               echo "pushed on attempt ${attempt}"
               exit 0
-            fi
+            }
+            echo "::error title=push ${attempt}::${push_log}"
             sleep 10
           done
           echo "::error::the screenshots were produced but could not be pushed"
