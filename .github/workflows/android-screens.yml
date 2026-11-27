@@ -119,6 +119,13 @@ jobs:
           git diff --cached --stat
           git commit -m "docs: android UI screenshots [skip ci]"
           export GIT_TERMINAL_PROMPT=0
+          dirty=$(git status --porcelain | head -20 | tr '\n' ' ')
+          if [ -n "$dirty" ]; then
+            echo "::warning title=files changed by the emulator::$dirty"
+          fi
+          # the emulator and gradle touch a few tracked files: keep only our commit
+          git checkout -- . || true
+          git status --porcelain | head -5 || true
           for attempt in 1 2 3 4; do
             git rebase --abort >/dev/null 2>&1 || true
             fetch_log=$(timeout 60 git fetch origin "${GITHUB_REF_NAME}" 2>&1) \
