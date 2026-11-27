@@ -6,12 +6,12 @@ from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter,
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
-    QMessageBox,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QSystemTrayIcon,
@@ -176,6 +176,28 @@ class MainWindow(QMainWindow):
         self._session_timer.timeout.connect(self._update_session_time)
         self._session_timer.start()
         self._update_session_time()
+
+        QTimer.singleShot(1800, self._maybe_ask_firewall)
+
+    # ---------------------------------------------------- phone / firewall
+    def _maybe_ask_firewall(self) -> None:
+        """Windows blocks the phone until FIDEXE is allowed through the firewall."""
+        if not self.ctx.remote_needs_firewall:
+            return
+        if self.ctx.settings.get("firewall_asked", False):
+            return
+        self.ctx.settings.set("firewall_asked", True)
+        answer = QMessageBox.question(
+            self,
+            "Доступ с телефона",
+            "Windows пока не пускает телефон к FIDEXE: правило брандмауэра не добавлено.\n\n"
+            "Разрешить доступ? Появится запрос Windows — нажмите «Да», и телефон сможет "
+            "подключаться к этому ноутбуку по Wi-Fi.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.ctx.fix_firewall()
 
     # -------------------------------------------------------------- sidebar
     def _display_name(self) -> str:
