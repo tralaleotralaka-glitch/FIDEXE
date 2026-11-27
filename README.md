@@ -10,7 +10,7 @@
 | Что | Ссылка | Размер |
 | --- | --- | --- |
 | Windows 10/11 | **[FIDEXE.exe v2.2.0](https://github.com/tralaleotralaka-glitch/FIDEXE/releases/download/v2.2.0/FIDEXE.exe)** | ~86 МБ |
-| Android 7.0+ | **[FIDEXE-Remote-2.2.0.apk](https://github.com/tralaleotralaka-glitch/FIDEXE/releases/download/android-v2.2.0/FIDEXE-Remote-2.2.0.apk)** | ~95 КБ |
+| Android 7.0+ | **[FIDEXE-Remote-2.2.0.apk](https://github.com/tralaleotralaka-glitch/FIDEXE/releases/download/android-v2.2.0/FIDEXE-Remote-2.2.0.apk)** | ~90 КБ |
 
 1. Скачайте `FIDEXE.exe` и запустите — установка и права администратора не нужны.
 2. SmartScreen может предупредить, потому что файл не подписан сертификатом:
@@ -114,6 +114,11 @@
 
 Скриншоты сняты на эмуляторе в CI против мок-ноутбука, поэтому вместо вашей веб-камеры на кадре
 тестовая картинка — на реальном ПК там будет изображение с камеры.
+
+Каждый коммит CI ставит настоящий APK на эмулятор и проходит путь пользователя: адрес → 6 цифр →
+пульт → перезапуск приложения (телефон должен остаться подключённым) → «Найти заново» →
+приложения → камера → блокировка. Отчёт последнего прогона лежит в
+[`docs/android/CI-STATUS.md`](docs/android/CI-STATUS.md).
 
 **Как устроено и почему это безопасно**
 
