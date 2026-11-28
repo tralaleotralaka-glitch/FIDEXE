@@ -35,7 +35,7 @@ for item in RAW_BROKERS.split(","):
 KEY = bytes.fromhex(LINK_KEY)
 PLAIN = os.environ.get("FIDEXE_RELAY_PLAIN") == "1"   # local tests use a plain broker
 TOPICS = topics(LINK_ID)
-TOKEN = os.environ.get("FIDEXE_DEMO_TOKEN", "demo-token-for-ci")
+TOKEN = os.environ.get("FIDEXE_DEMO_TOKEN", "demo-token-1234567890")
 
 APPS = [
     {"pid": 4242, "app": "notepad.exe", "title": "Блокнот — далеко", "active": True},

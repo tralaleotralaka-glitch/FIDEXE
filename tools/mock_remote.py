@@ -23,7 +23,7 @@ PASSWORD = "demo-pass-123"
 SALT = "00112233445566778899aabbccddeeff"
 ITERATIONS = 240_000
 PW_HASH = hashlib.pbkdf2_hmac("sha256", PASSWORD.encode(), bytes.fromhex(SALT), ITERATIONS).hex()
-TOKEN = "demo-token-1234567890"
+TOKEN = os.environ.get("FIDEXE_DEMO_TOKEN", "demo-token-1234567890")
 PAIR_SECRET = secrets.token_bytes(32)
 PAIR_PERIOD = 60
 # the same credentials the CI relay host uses, so the phone can also reach the
