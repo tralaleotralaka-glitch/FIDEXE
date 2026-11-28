@@ -147,22 +147,6 @@ else
     step_failed "lock command not received"
 fi
 
-{
-    echo "# Android UI check — CI report"
-    echo
-    echo "Собрано автоматически: эмулятор Android, настоящий APK, мок-ноутбук."
-    echo
-    echo "- время (UTC): $(date -u '+%Y-%m-%d %H:%M')"
-    echo "- коммит: ${GITHUB_SHA:-local}"
-    echo "- итог: $([ "$STATUS" -eq 0 ] && echo 'всё зелёное' || echo 'есть провалы')"
-    echo
-    cat "$CHECKS"
-    echo
-    echo "## Скриншоты в папке"
-    echo
-    ls -1 "$OUT" | sed 's/^/- /'
-} > "$OUT/CI-STATUS.md"
-
 echo "== the laptop is far away: internet relay =="
 adb logcat -d -s FIDEXE > /tmp/app-relay-before.log 2>/dev/null || true
 note "интернет-канал перед отключением Wi-Fi: $(grep -c 'relay:' /tmp/app-relay-before.log 2>/dev/null || echo 0) строк лога"
@@ -211,6 +195,23 @@ grep -o "text='Интернет-канал[^']*'" /tmp/ui-relay.txt | head -1 > 
 if [ -s /tmp/channel.txt ]; then
     note "на экране: $(cat /tmp/channel.txt)"
 fi
+
+
+{
+    echo "# Android UI check — CI report"
+    echo
+    echo "Собрано автоматически: эмулятор Android, настоящий APK, мок-ноутбук."
+    echo
+    echo "- время (UTC): $(date -u '+%Y-%m-%d %H:%M')"
+    echo "- коммит: ${GITHUB_SHA:-local}"
+    echo "- итог: $([ "$STATUS" -eq 0 ] && echo 'всё зелёное' || echo 'есть провалы')"
+    echo
+    cat "$CHECKS"
+    echo
+    echo "## Скриншоты в папке"
+    echo
+    ls -1 "$OUT" | sed 's/^/- /'
+} > "$OUT/CI-STATUS.md"
 
 echo "STATUS=$STATUS"
 exit "$STATUS"
