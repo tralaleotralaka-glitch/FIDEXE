@@ -51,12 +51,18 @@ final class Relay {
     private final Map<String, JSONObject> answers = new HashMap<>();
     private final Object gate = new Object();
 
+    private final Context appContext;
+    private final Object connectGate = new Object();
+    private volatile boolean connecting;
+    private volatile long nextConnectAt;
+
     private MqttAsyncClient client;
     private volatile boolean connected;
     private volatile String lastError = "";
-    private String currentBroker = "";
+    private volatile String currentBroker = "";
 
-    Relay(JSONObject link) {
+    Relay(JSONObject link, Context context) {
+        appContext = context == null ? null : context.getApplicationContext();
         linkId = link == null ? "" : link.optString("id", "");
         String keyHex = link == null ? "" : link.optString("key", "");
         key = unhex(keyHex);
@@ -93,8 +99,52 @@ final class Relay {
         return lastError;
     }
 
+    /**
+     * Blocking connect, on demand: called from a worker thread whenever a request
+     * needs the channel, so a dropped connection heals by itself.
+     */
+    boolean ensureConnected(long waitMs) {
+        if (isConnected()) {
+            return true;
+        }
+        long deadline = System.currentTimeMillis() + waitMs;
+        synchronized (connectGate) {
+            if (connecting) {
+                while (connecting && !isConnected()) {
+                    long left = deadline - System.currentTimeMillis();
+                    if (left <= 0) {
+                        break;
+                    }
+                    try {
+                        connectGate.wait(Math.min(left, 250));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                return isConnected();
+            }
+            if (System.currentTimeMillis() < nextConnectAt) {
+                return false;
+            }
+            connecting = true;
+        }
+        try {
+            boolean ok = connect();
+            if (!ok) {
+                nextConnectAt = System.currentTimeMillis() + 15_000;
+            }
+            return ok;
+        } finally {
+            synchronized (connectGate) {
+                connecting = false;
+                connectGate.notifyAll();
+            }
+        }
+    }
+
     /** Blocking connect: call it from a worker thread, never from the UI thread. */
-    boolean connect(Context context) {
+    boolean connect() {
         if (!usable()) {
             lastError = "нет ключа интернет-связи";
             return false;
@@ -115,11 +165,21 @@ final class Relay {
                     @Override
                     public void connectComplete(boolean reconnect, String serverURI) {
                         connected = true;
+                        if (reconnect) {
+                            // clean session: the answer topic has to be taken again
+                            try {
+                                candidate.subscribe(topicDown, 1);
+                                Log.i(TAG, "relay: reconnected to " + serverURI);
+                            } catch (Exception exc) {
+                                Log.w(TAG, "relay: resubscribe failed", exc);
+                            }
+                        }
                     }
 
                     @Override
                     public void connectionLost(Throwable cause) {
                         connected = false;
+                        Log.w(TAG, "relay: connection lost", cause);
                     }
 
                     @Override
@@ -188,8 +248,10 @@ final class Relay {
 
     JSONObject request(String op, JSONObject payload, String token, long timeoutMs)
             throws Api.ApiException {
-        if (!isConnected()) {
-            throw new Api.ApiException(0, "Ноутбук недоступен через интернет");
+        // The broker may have dropped us while the phone was in a pocket: heal first.
+        if (!ensureConnected(12_000)) {
+            String why = lastError.isEmpty() ? "нет связи с брокером" : lastError;
+            throw new Api.ApiException(0, "Ноутбук недоступен через интернет (" + why + ")");
         }
         String id = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
         try {

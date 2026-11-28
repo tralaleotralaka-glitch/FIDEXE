@@ -174,7 +174,7 @@ public class MainActivity extends Activity {
         } catch (org.json.JSONException exc) {
             return;
         }
-        final Relay channel = new Relay(link);
+        final Relay channel = new Relay(link, getApplicationContext());
         if (!channel.usable()) {
             return;
         }
@@ -185,7 +185,7 @@ public class MainActivity extends Activity {
         }
         relayConnecting = true;
         io.execute(() -> {
-            boolean ok = channel.connect(getApplicationContext());
+            boolean ok = channel.connect();
             relayConnecting = false;
             if (!ok) {
                 log("Интернет-связь не поднялась: " + channel.lastError());
@@ -680,6 +680,7 @@ public class MainActivity extends Activity {
                             }
                         });
                     }
+                    ui.post(this::updateRelayLine);
                     ui.postDelayed(pollTask, POLL_MS);
                 });
             }

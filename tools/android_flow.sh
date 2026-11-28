@@ -192,8 +192,9 @@ fi
 if grep -q "через интернет" /tmp/ui-relay.txt; then
     note "пульт сам переключился на интернет-канал"
 fi
-cp /tmp/relay.log docs/android/relay-host.log 2>/dev/null || true
-cp /tmp/app-relay.log docs/android/app-relay.log 2>/dev/null || true
+cp /tmp/relay.log docs/android/relay-host.txt 2>/dev/null || true
+cp /tmp/app-relay.log docs/android/app-relay.txt 2>/dev/null || true
+cp /tmp/app-relay-before.log docs/android/app-relay-before.txt 2>/dev/null || true
 cp /tmp/ui-relay.txt docs/android/ui-relay.txt 2>/dev/null || true
 if grep -q "Интернет-канал: готов" /tmp/ui-relay.txt; then
     note "пульт показывает готовый интернет-канал"

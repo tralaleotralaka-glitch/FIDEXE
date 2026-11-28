@@ -276,7 +276,7 @@ final class Api {
     private static JSONObject relayOrThrow(String op, JSONObject payload, String token, ApiException lanError)
             throws ApiException {
         Relay channel = relay;
-        if (channel == null || !channel.isConnected() || lanError.code != 0) {
+        if (channel == null || !channel.usable() || lanError.code != 0) {
             throw lanError;
         }
         JSONObject answer = channel.request(op, payload, token);
