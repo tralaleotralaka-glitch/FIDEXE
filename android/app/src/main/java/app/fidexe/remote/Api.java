@@ -26,6 +26,12 @@ final class Api {
     static final int DISCOVERY_PORT = 47812;
     static final String DISCOVERY_MAGIC = "FIDEXE?";
 
+    /** Encrypted internet channel; set once the phone has been paired. */
+    static volatile Relay relay;
+    /** Where the last answer came from: "lan" or "relay". */
+    static volatile String lastTransport = "lan";
+    private static volatile long lanSkipUntil;
+
     static class ApiException extends Exception {
         /** HTTP status, or 0 when the laptop could not be reached at all. */
         final int code;
@@ -87,7 +93,11 @@ final class Api {
 
     /** Windows open on the desktop, the active one first. */
     static JSONObject apps(String host, String token) throws ApiException {
-        return call(host, "/api/apps", "GET", null, token);
+        try {
+            return viaLan(host, "/api/apps", "GET", null, token);
+        } catch (ApiException exc) {
+            return relayOrThrow("apps", null, token, exc);
+        }
     }
 
     /** Ask the desktop to close an app the same way a click on X would. */
@@ -97,11 +107,44 @@ final class Api {
             body.put("pid", pid);
         } catch (JSONException ignored) {
         }
-        call(host, "/api/apps/close", "POST", body, token);
+        try {
+            viaLan(host, "/api/apps/close", "POST", body, token);
+            return;
+        } catch (ApiException exc) {
+            if (exc.code != 0) {
+                throw exc;
+            }
+        }
+        relayOrThrow("close", body, token, new ApiException(0, "Ноутбук недоступен"));
     }
 
     /** One JPEG frame from the laptop webcam. */
     static byte[] frame(String host, String token) throws ApiException {
+        try {
+            return frameViaLan(host, token);
+        } catch (ApiException exc) {
+            if (exc.code != 0) {
+                throw exc;
+            }
+        }
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("frame", true);
+        } catch (JSONException ignored) {
+        }
+        JSONObject answer = relayOrThrow("camera", payload, token, new ApiException(0, "Ноутбук недоступен"));
+        String encoded = answer.optString("jpeg", "");
+        if (encoded.isEmpty()) {
+            throw new ApiException("Ноутбук не прислал кадр");
+        }
+        try {
+            return android.util.Base64.decode(encoded, android.util.Base64.DEFAULT);
+        } catch (IllegalArgumentException exc) {
+            throw new ApiException("Кадр пришёл повреждённым");
+        }
+    }
+
+    private static byte[] frameViaLan(String host, String token) throws ApiException {
         HttpURLConnection conn = null;
         try {
             String base = host.startsWith("http://") || host.startsWith("https://")
@@ -137,7 +180,11 @@ final class Api {
     }
 
     static JSONObject status(String host, String token) throws ApiException {
-        return call(host, "/api/status", "GET", null, token);
+        try {
+            return viaLan(host, "/api/status", "GET", null, token);
+        } catch (ApiException exc) {
+            return relayOrThrow("status", null, token, exc);
+        }
     }
 
     static boolean command(String host, String token, String cmd) throws ApiException {
@@ -146,8 +193,13 @@ final class Api {
             body.put("cmd", cmd);
         } catch (JSONException ignored) {
         }
-        JSONObject response = call(host, "/api/command", "POST", body, token);
-        return response.optBoolean("ok", false);
+        try {
+            JSONObject response = viaLan(host, "/api/command", "POST", body, token);
+            return response.optBoolean("ok", false);
+        } catch (ApiException exc) {
+            JSONObject response = relayOrThrow("command", body, token, exc);
+            return response.optBoolean("ok", false);
+        }
     }
 
     private static JSONObject call(String host, String path, String method, JSONObject body, String token)
@@ -199,6 +251,38 @@ final class Api {
                 conn.disconnect();
             }
         }
+    }
+
+    /** LAN request that remembers a dead network and skips it for a minute. */
+    private static JSONObject viaLan(String host, String path, String method, JSONObject body, String token)
+            throws ApiException {
+        if (System.currentTimeMillis() < lanSkipUntil) {
+            throw new ApiException(0, "Ноутбук не в этой Wi-Fi сети");
+        }
+        try {
+            JSONObject result = call(host, path, method, body, token);
+            lanSkipUntil = 0;
+            lastTransport = "lan";
+            return result;
+        } catch (ApiException exc) {
+            if (exc.code == 0) {
+                lanSkipUntil = System.currentTimeMillis() + 60_000;
+            }
+            throw exc;
+        }
+    }
+
+    /** Uses the encrypted internet channel; rethrows the LAN error if it is not usable. */
+    private static JSONObject relayOrThrow(String op, JSONObject payload, String token, ApiException lanError)
+            throws ApiException {
+        Relay channel = relay;
+        if (channel == null || !channel.isConnected() || lanError.code != 0) {
+            throw lanError;
+        }
+        JSONObject answer = channel.request(op, payload, token);
+        lastTransport = "relay";
+        lanSkipUntil = System.currentTimeMillis() + 60_000;
+        return answer;
     }
 
     private static byte[] readBytes(InputStream stream) throws IOException {

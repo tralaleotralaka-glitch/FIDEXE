@@ -37,6 +37,13 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python tools/remote_test.py
 
+      - name: Internet relay test (encryption, requests, reconnect)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          pip install amqtt
+          python tools/relay_test.py
+
       - name: Build single-file exe
         run: pyinstaller --noconfirm --clean build.spec
 
@@ -94,7 +101,7 @@ jobs:
           SHA256: ${{ steps.details.outputs.sha256 }}
         run: |
           $notes = @"
-          **FIDEXE 2.2.0** — история буфера обмена и статистика приложений для Windows 10/11.
+          **FIDEXE 2.3.0** — история буфера обмена и статистика приложений для Windows 10/11.
 
           ### Как запустить
           1. Скачайте `FIDEXE.exe` ниже.
@@ -114,17 +121,19 @@ jobs:
           - подключённый телефон остаётся подключённым после перезапуска программы и перезагрузки ПК;
           - если Windows Firewall блокирует порт, FIDEXE сам добавляет правило (или подсказывает,
             где разрешить доступ);
-          - просмотр веб-камеры ноутбука с телефона и закрытие программ из списка открытых окон.
+          - просмотр веб-камеры ноутбука с телефона и закрытие программ из списка открытых окон;
+          - телефон работает из любой сети: дома по Wi-Fi, на улице и в другом городе — через
+            зашифрованный канал (AES-256-GCM) на публичном MQTT-брокере, без портов и настроек.
 
           Данные хранятся только на вашем компьютере в ``%APPDATA%\FIDEXE``, интернет не используется.
 
           **Размер:** $env:SIZE_MB МБ · **SHA256:** ``$env:SHA256``
           "@
           $notes | Out-File -Encoding utf8 release-notes.md
-          gh release view v2.2.0 *> $null
+          gh release view v2.3.0 *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create v2.2.0 "dist\FIDEXE.exe" --title "FIDEXE 2.2.0 — Windows exe" --notes-file release-notes.md
+            gh release create v2.3.0 "dist\FIDEXE.exe" --title "FIDEXE 2.3.0 — Windows exe" --notes-file release-notes.md
           } else {
-            gh release upload v2.2.0 "dist\FIDEXE.exe" --clobber
-            gh release edit v2.2.0 --notes-file release-notes.md
+            gh release upload v2.3.0 "dist\FIDEXE.exe" --clobber
+            gh release edit v2.3.0 --notes-file release-notes.md
           }

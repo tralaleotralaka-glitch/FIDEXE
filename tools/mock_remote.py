@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import struct
 import zlib
 import hmac
@@ -25,6 +26,19 @@ PW_HASH = hashlib.pbkdf2_hmac("sha256", PASSWORD.encode(), bytes.fromhex(SALT), 
 TOKEN = "demo-token-1234567890"
 PAIR_SECRET = secrets.token_bytes(32)
 PAIR_PERIOD = 60
+# the same credentials the CI relay host uses, so the phone can also reach the
+# "laptop" through a public broker once the local network is gone
+RELAY_LINK = {
+    "id": os.environ.get("FIDEXE_RELAY_ID", "ci-relay-demo-link"),
+    "key": os.environ.get("FIDEXE_RELAY_KEY", "6f" * 32),
+    "brokers": [[host, int(port)] for host, port in (
+        item.split(":") for item in
+        os.environ.get("FIDEXE_RELAY_BROKERS", "broker.hivemq.com:8883").split(",")
+        if ":" in item
+    )],
+    "protocol": 1,
+    "version": "2.3.0",
+}
 
 
 def pair_code_for(window: int) -> str:
@@ -121,10 +135,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         path = self.path.split("?")[0]
         if path == "/api/ping":
-            self._send(200, {"ok": True, "app": "FIDEXE", "version": "2.2.0"})
+            self._send(200, {"ok": True, "app": "FIDEXE", "version": "2.3.0"})
         elif path == "/api/info":
             self._send(200, {
-                "app": "FIDEXE", "version": "2.2.0", "protocol": 1,
+                "app": "FIDEXE", "version": "2.3.0", "protocol": 1,
                 "host": "DESKTOP-DEMO", "address": "127.0.0.1:47811",
                 "accounts": ["de***@fidexe.app"], "requires_account": False,
                 "pairing": True, "pair_code_ttl": PAIR_PERIOD,
@@ -206,7 +220,7 @@ class Handler(BaseHTTPRequestHandler):
             print("[mock] phone paired with code:", data.get("device"), flush=True)
             self._send(200, {
                 "token": TOKEN, "expires_in": 7200, "account": EMAIL,
-                "host": "DESKTOP-DEMO",
+                "host": "DESKTOP-DEMO", "paired": True, "relay": RELAY_LINK,
             })
             return
         if path == "/api/auth/challenge":
@@ -230,7 +244,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "Неверный пароль"})
                 return
             print("[mock] phone authenticated:", data.get("device"), flush=True)
-            self._send(200, {"token": TOKEN, "expires_in": 7200, "account": EMAIL})
+            self._send(200, {"token": TOKEN, "expires_in": 7200, "account": EMAIL,
+                             "relay": RELAY_LINK})
             return
         if path == "/api/apps/close":
             if not self._authorised():

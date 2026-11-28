@@ -114,6 +114,8 @@ public class MainActivity extends Activity {
     private TextView appsStatus;
 
     private String screen = "connect";
+    private Relay relayChannel;
+    private volatile boolean relayConnecting;
 
     // ------------------------------------------------------------------ setup
     @Override
@@ -151,6 +153,68 @@ public class MainActivity extends Activity {
             host = savedHost;
             showConnectScreen();
         }
+        startRelay();
+    }
+
+    // ------------------------------------------------------- internet relay
+    /** Opens the encrypted channel to the laptop through a public broker. */
+    private void startRelay() {
+        String raw = prefs.getString("relay", "");
+        if (raw == null || raw.isEmpty()) {
+            return;
+        }
+        if (relayChannel != null && relayChannel.isConnected()) {
+            Api.relay = relayChannel;
+            return;
+        }
+        final org.json.JSONObject link;
+        try {
+            link = new org.json.JSONObject(raw);
+        } catch (org.json.JSONException exc) {
+            return;
+        }
+        final Relay channel = new Relay(link);
+        if (!channel.usable()) {
+            return;
+        }
+        relayChannel = channel;
+        Api.relay = channel;
+        if (relayConnecting) {
+            return;
+        }
+        relayConnecting = true;
+        io.execute(() -> {
+            boolean ok = channel.connect(getApplicationContext());
+            relayConnecting = false;
+            if (!ok) {
+                log("Интернет-связь не поднялась: " + channel.lastError());
+                return;
+            }
+            ui.post(() -> {
+                log("Интернет-связь готова: " + channel.brokerName());
+                if ("control".equals(screen)) {
+                    refreshOnce();
+                }
+            });
+        });
+    }
+
+    private void rememberRelay(org.json.JSONObject auth) {
+        org.json.JSONObject link = auth == null ? null : auth.optJSONObject("relay");
+        if (link == null || link.optString("id", "").isEmpty()) {
+            return;
+        }
+        prefs.edit().putString("relay", link.toString()).apply();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // coming back from the pocket: the channel may have died while we slept
+        if (!"connect".equals(screen)) {
+            startRelay();
+            refreshOnce();
+        }
     }
 
     @Override
@@ -172,6 +236,11 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         stopCamera();
         stopPolling();
+        if (relayChannel != null) {
+            relayChannel.close();
+            relayChannel = null;
+            Api.relay = null;
+        }
         if (discovery != null) {
             discovery.stop();
         }
@@ -245,7 +314,7 @@ public class MainActivity extends Activity {
 
         container.addView(text("Работает только в локальной сети: данные идут напрямую с телефона "
                 + "на ноутбук, интернет не нужен.", FAINT, 11, false), lpm(-1, -2, 16));
-        container.addView(text("FIDEXE Remote 2.2.0", FAINT, 11, false), lpm(-1, -2, 8));
+        container.addView(text("FIDEXE Remote 2.3.0", FAINT, 11, false), lpm(-1, -2, 8));
     }
 
     private void startDiscovery() {
@@ -347,6 +416,7 @@ public class MainActivity extends Activity {
             try {
                 String device = (Build.MANUFACTURER + " " + Build.MODEL).trim();
                 JSONObject auth = Api.pair(target, code, device);
+                rememberRelay(auth);
                 final String newToken = auth.getString("token");
                 final String name = auth.optString("host", "Ноутбук");
                 final String mail = auth.optString("account", email);
@@ -374,6 +444,7 @@ public class MainActivity extends Activity {
                 .putString("email", email)
                 .putString("laptop", laptopName)
                 .apply();
+        startRelay();
         showControlScreen();
     }
 
@@ -407,6 +478,7 @@ public class MainActivity extends Activity {
                 String proof = Api.hmacHex(hash, challengeValue);
                 String device = (Build.MANUFACTURER + " " + Build.MODEL).trim();
                 JSONObject auth = Api.proof(target, mail, challengeValue, proof, device);
+                rememberRelay(auth);
                 final String newToken = auth.getString("token");
                 final String name = info.optString("host", "Ноутбук");
                 ui.post(() -> {
@@ -597,7 +669,9 @@ public class MainActivity extends Activity {
         }
         laptopName = status.optString("host", laptopName);
         laptopLabel.setText(laptopName);
-        statusLine.setText("●  На связи");
+        statusLine.setText("relay".equals(Api.lastTransport)
+                ? "●  На связи · через интернет"
+                : "●  На связи · Wi-Fi");
         statusLine.setTextColor(MINT);
         timeValue.setText(Api.humanDuration(status.optLong("today_seconds", 0)));
 
@@ -1059,7 +1133,11 @@ public class MainActivity extends Activity {
                 + "5. Введите эти цифры на телефоне и нажмите «Войти по коду» — откроется пульт. "
                 + "Можно войти и почтой с паролем того же аккаунта.\n\n"
                 + "6. Кнопка «Заблокировать ноутбук» сразу блокирует экран компьютера.\n\n"
-                + "Код живёт минуту и работает только в вашей Wi-Fi сети; сервер не выходит в интернет.");
+                + "Дома телефон подключается напрямую по Wi-Fi. На улице, в метро или в другом "
+                + "городе — через зашифрованный интернет-канал: ни портов, ни настроек роутера не нужно, "
+                + "ноутбук можно оставить за сотни километров.\n\n"
+                + "Код живёт минуту и виден только на экране ноутбука; трафик через посредника "
+                + "зашифрован ключом, который создался при подключении по коду.");
         builder.setPositiveButton("Понятно", null);
         builder.show();
     }

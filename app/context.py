@@ -12,6 +12,7 @@ from .core import processes, remote as remote_mod
 from .core.camera import CameraService
 from .core.clipboard_watch import ClipboardWatcher
 from .core.db import Storage
+from .core.relay import RelayClient
 from .core.remote import RemoteControl
 from .core.settings import Settings
 from .core.usage_tracker import UsageTracker
@@ -52,6 +53,8 @@ class AppContext(QObject):
         self.remote.client_authenticated.connect(self._on_remote_client)
         self.remote.command_done.connect(self._on_remote_command)
         self.remote.failed_attempt.connect(self._on_remote_failure)
+        # encrypted internet channel: the phone can be a hundred kilometres away
+        self.relay = RelayClient(self.remote, self)
 
     # ------------------------------------------------------------- session
     def sign_in(self, user_id: int, remember: bool = True) -> None:
@@ -111,6 +114,7 @@ class AppContext(QObject):
         if self.remote.running:
             return True
         started = self.remote.start(int(self.settings.get("remote_port", 47811)))
+        self.relay.start()
         if started and self.remote.firewall_state == "blocked":
             log.warning("Windows Firewall блокирует телефон — правило не добавлено")
             self.toast.emit(
@@ -136,6 +140,7 @@ class AppContext(QObject):
         return False
 
     def stop_remote(self) -> None:
+        self.relay.stop()
         self.remote.stop()
 
     def set_remote_enabled(self, enabled: bool) -> bool:

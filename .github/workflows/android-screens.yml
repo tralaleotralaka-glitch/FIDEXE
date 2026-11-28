@@ -51,11 +51,31 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Install the relay helpers
+        run: pip install paho-mqtt==1.6.1 cryptography==43.0.3
+
       - name: Start mock desktop API
+        env:
+          FIDEXE_RELAY_ID: ci-relay-demo-link
+          FIDEXE_RELAY_KEY: 6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f
         run: |
           nohup python3 tools/mock_remote.py --port 47811 > /tmp/mock.log 2>&1 &
           sleep 2
           curl -s http://127.0.0.1:47811/api/info; echo
+
+      - name: Start the far-away laptop (public MQTT relay)
+        env:
+          FIDEXE_RELAY_ID: ci-relay-demo-link
+          FIDEXE_RELAY_KEY: 6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f
+          FIDEXE_DEMO_TOKEN: demo-token-for-ci
+        run: |
+          nohup python3 tools/relay_host.py > /tmp/relay-host.out 2>&1 &
+          for i in $(seq 1 20); do
+            grep -q "READY" /tmp/relay.log 2>/dev/null && break
+            sleep 1
+          done
+          cat /tmp/relay.log || true
+          grep -q "READY" /tmp/relay.log || echo "::warning::the public broker did not answer, the relay test will fail"
 
       - name: Boot emulator, log in with the desktop code and take screenshots
         uses: reactivecircus/android-emulator-runner@v2

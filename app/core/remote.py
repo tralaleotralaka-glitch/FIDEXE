@@ -24,6 +24,7 @@ Two ways in:
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -215,9 +216,13 @@ class Session:
 class RemoteError(Exception):
     """Authentication / request failure with a user facing message."""
 
+    code = 400
+
 
 class AuthRequired(RemoteError):
     """The request has no valid token: answered with 401."""
+
+    code = 401
 
 
 class RemoteControl(QObject):
@@ -652,6 +657,7 @@ class RemoteControl(QObject):
             "account": session.email,
             "host": hostname(),
             "paired": ttl >= TOKEN_TTL,
+            "relay": self.relay_link_payload(),
         }
 
     def session_for(self, token: str) -> Session:
@@ -723,6 +729,44 @@ class RemoteControl(QObject):
         except CameraUnavailable as exc:
             raise RemoteError(str(exc)) from None
 
+    # ------------------------------------------------------------------ relay
+    def hostname(self) -> str:
+        return hostname()
+
+    def relay_link_payload(self) -> dict:
+        from . import relay as relay_mod
+
+        return relay_mod.link_payload()
+
+    def relay_dispatch(self, op: str, payload: dict, token: str) -> dict:
+        """One request from the phone that arrived through the internet relay."""
+        op = str(op or "")
+        if op == "ping":
+            return {"ok": True, "host": hostname(), "version": APP_VERSION}
+        if op == "info":
+            return self.info()
+        session = self.session_for(token or "")
+        if op == "status":
+            return self.status(session.user_id)
+        if op == "command":
+            cmd = str((payload or {}).get("cmd", ""))
+            ok = self.run_command(cmd, session.device)
+            return {"ok": ok, "cmd": cmd}
+        if op == "apps":
+            return self.apps()
+        if op == "close":
+            return self.close_app((payload or {}).get("pid", 0), session.device)
+        if op == "camera":
+            if (payload or {}).get("meta"):
+                return self.camera_info()
+            frame = self.camera_frame()
+            return {
+                "jpeg": base64.b64encode(frame).decode("ascii"),
+                "mime": "image/jpeg",
+                "bytes": len(frame),
+            }
+        raise RemoteError("Неизвестная операция")
+
     # --------------------------------------------------------------- commands
     def run_command(self, cmd: str, device: str) -> bool:
         if cmd not in ALLOWED_COMMANDS:
@@ -756,6 +800,7 @@ class RemoteControl(QObject):
             "requires_account": not emails,
             "pairing": True,
             "pair_code_ttl": PAIR_CODE_PERIOD,
+            "relay": {"protocol": PROTOCOL, "enabled": True},
         }
 
     def status(self, user_id: int) -> dict:

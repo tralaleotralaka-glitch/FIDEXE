@@ -155,5 +155,26 @@ fi
     ls -1 "$OUT" | sed 's/^/- /'
 } > "$OUT/CI-STATUS.md"
 
+echo "== the laptop is far away: internet relay =="
+pkill -f mock_remote.py || true
+sleep 2
+note "локальная сеть отключена: мок-ноутбук остановлен"
+curl -s --max-time 3 http://127.0.0.1:47811/api/ping > /dev/null 2>&1 \
+    && step_failed "mock laptop is still running" \
+    || note "локальный адрес 47811 больше не отвечает"
+python3 tools/android_ui.py tap-text "Заблокировать ноутбук" || step_failed "tap lock through the relay"
+sleep 18
+take_shot relay.png
+if grep -q "LOCK COMMAND RECEIVED OVER THE INTERNET" /tmp/relay.log 2>/dev/null; then
+    note "блокировка через интернет (публичный брокер, E2E-шифрование) — дошла"
+else
+    step_failed "блокировка через интернет не дошла"
+    tail -n 25 /tmp/relay.log 2>/dev/null || true
+fi
+python3 tools/android_ui.py dump > /tmp/ui-relay.txt 2>&1 || true
+if grep -q "через интернет" /tmp/ui-relay.txt; then
+    note "пульт сам переключился на интернет-канал"
+fi
+
 echo "STATUS=$STATUS"
 exit "$STATUS"

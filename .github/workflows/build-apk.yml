@@ -91,9 +91,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk FIDEXE-Remote-2.2.0.apk
-          sha256sum FIDEXE-Remote-2.2.0.apk
-          gh release view android-v2.2.0 > /dev/null 2>&1 || \
-            gh release create android-v2.2.0 --title "FIDEXE Remote 2.2.0 — Android" --notes-file android/RELEASE_NOTES.md
-          gh release upload android-v2.2.0 FIDEXE-Remote-2.2.0.apk --clobber
-          gh release edit android-v2.2.0 --notes-file android/RELEASE_NOTES.md
+          cp android/app/build/outputs/apk/release/app-release.apk FIDEXE-Remote-2.3.0.apk
+          sha256sum FIDEXE-Remote-2.3.0.apk
+          gh release view android-v2.3.0 > /dev/null 2>&1 || \
+            gh release create android-v2.3.0 --title "FIDEXE Remote 2.3.0 — Android" --notes-file android/RELEASE_NOTES.md
+          gh release upload android-v2.3.0 FIDEXE-Remote-2.3.0.apk --clobber
+          gh release edit android-v2.3.0 --notes-file android/RELEASE_NOTES.md

@@ -16,8 +16,8 @@ android {
         applicationId "app.fidexe.remote"
         minSdk 24
         targetSdk 34
-        versionCode 5
-        versionName "2.2.0"
+        versionCode 6
+        versionName "2.3.0"
     }
 
     signingConfigs {
@@ -56,4 +56,9 @@ android {
         abortOnError false
         checkReleaseBuilds false
     }
+}
+
+dependencies {
+    // MQTT over TLS: the encrypted channel that works from any distance
+    implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5'
 }
