@@ -42,7 +42,9 @@ jobs:
 
       - name: Build release APK
         working-directory: android
-        run: gradle --no-daemon assembleRelease
+        run: |
+          set -o pipefail
+          gradle --no-daemon assembleRelease 2>&1 | tee /tmp/gradle.log
 
       - name: Enable KVM
         run: |
@@ -97,6 +99,9 @@ jobs:
             echo "# emulator UI test log"
             echo
             echo "devices: $(adb devices | tr '\n' ' ')"
+            echo
+            echo '## gradle'
+            grep -E "error:|FAILURE|could not|e: " /tmp/gradle.log 2>/dev/null | head -n 60
             echo
             echo '## mock desktop'
             tail -n 80 /tmp/mock.log 2>/dev/null

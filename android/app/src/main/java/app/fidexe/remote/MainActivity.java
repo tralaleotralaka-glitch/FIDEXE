@@ -680,7 +680,7 @@ public class MainActivity extends Activity {
                             }
                         });
                     }
-                    ui.post(this::updateRelayLine);
+                    ui.post(MainActivity.this::updateRelayLine);
                     ui.postDelayed(pollTask, POLL_MS);
                 });
             }
