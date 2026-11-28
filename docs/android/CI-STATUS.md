@@ -2,14 +2,14 @@
 
 Собрано автоматически: эмулятор Android, настоящий APK, мок-ноутбук.
 
-- время (UTC): 2026-11-28 08:18
-- коммит: a0660c4abada0dda2c97535a10a3bd86912c3e92
-- итог: всё зелёное
+- время (UTC): 2026-11-28 08:26
+- коммит: 4698ff1127baa0ded4a20f49e54bf101fb83c20c
+- итог: есть провалы
 
 - screenshot: connect.png
 - screenshot: filled.png
 - screenshot: control.png
-- телефон остался подключён после перезапуска приложения
+- FAIL: the app forgot the laptop after a restart
 - screenshot: remember.png
 - пульт жив после «Найти заново»
 - screenshot: apps.png
@@ -24,6 +24,8 @@
 ## Скриншоты в папке
 
 - CI-STATUS.md
+- app-relay-before.txt
+- app-relay.txt
 - apps-closed.png
 - apps.png
 - camera.png
@@ -31,6 +33,7 @@
 - control.png
 - filled.png
 - locked.png
+- relay-host.txt
 - relay.png
 - remember.png
 - ui-relay.txt
