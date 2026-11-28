@@ -231,9 +231,40 @@ def run_camera_check() -> int:
     return 0
 
 
+def run_relay_check() -> int:
+    """Proves the internet channel really ships inside the frozen build."""
+    from app.core import relay_proto
+
+    if relay_proto.AESGCM is None:
+        print("cryptography: missing")
+        return 2
+    print("cryptography: ok")
+    try:
+        import paho.mqtt.client as mqtt  # noqa: F401
+    except Exception as exc:  # noqa: BLE001
+        print("paho: missing —", exc)
+        return 3
+    print("paho: ok")
+    link = relay_proto.load_link()
+    print("link id:", link["id"][:8] + "…", "key bytes:", len(bytes.fromhex(link["key"])))
+    topics = relay_proto.topics(link["id"])
+    print("topics:", topics["up"], topics["down"], topics["presence"])
+    key = bytes.fromhex(link["key"])
+    sealed = relay_proto.encrypt(key, {"v": 1, "op": "ping", "t": "self", "p": {}})
+    opened = relay_proto.decrypt(key, sealed)
+    if opened.get("op") != "ping" or sealed.count(".") != 1:
+        print("encryption: broken")
+        return 4
+    print("encryption: ok", "bytes:", len(sealed))
+    print("brokers:", ", ".join(f"{host}:{port}" for host, port in relay_proto.BROKERS))
+    return 0
+
+
 def main() -> int:
     if "--camera-check" in sys.argv:
         return run_camera_check()
+    if "--relay-check" in sys.argv:
+        return run_relay_check()
     setup_logging()
     logging.info("Запуск %s %s", APP_TITLE, APP_VERSION)
 

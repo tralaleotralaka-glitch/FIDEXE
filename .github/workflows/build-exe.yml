@@ -55,6 +55,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "opencv is not bundled into the exe" }
           if ($output -notmatch "opencv: \d") { throw "opencv version was not reported" }
 
+      - name: Check the internet channel inside the exe
+        shell: pwsh
+        run: |
+          $output = & ".\dist\FIDEXE.exe" --relay-check 2>&1 | Out-String
+          Write-Host $output
+          if ($LASTEXITCODE -ne 0) { throw "the internet channel is not bundled into the exe" }
+          foreach ($needle in @("cryptography: ok", "paho: ok", "encryption: ok", "brokers:")) {
+            if ($output -notmatch [regex]::Escape($needle)) { throw "$needle was not reported" }
+          }
+
       - name: Headless self-test of the frozen app
         env:
           QT_QPA_PLATFORM: offscreen
