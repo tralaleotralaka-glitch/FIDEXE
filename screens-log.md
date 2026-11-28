@@ -7,14 +7,11 @@ Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 
 ## mock desktop
-[mock] FIDEXE desktop API on 0.0.0.0:47811 (demo@fidexe.app / demo-pass-123, code 374105)
+[mock] FIDEXE desktop API on 0.0.0.0:47811 (demo@fidexe.app / demo-pass-123, code 685688)
 [mock] "GET /api/info HTTP/1.1" 200 -
 [mock] "GET /api/demo/code HTTP/1.1" 200 -
 [mock] phone paired with code: unknown Android SDK built for x86_64
 [mock] "POST /api/pair HTTP/1.1" 200 -
-[mock] "GET /api/status HTTP/1.1" 200 -
-[mock] "GET /api/status HTTP/1.1" 200 -
-[mock] "GET /api/status HTTP/1.1" 200 -
 [mock] "GET /api/status HTTP/1.1" 200 -
 [mock] "GET /api/status HTTP/1.1" 200 -
 [mock] "GET /api/status HTTP/1.1" 200 -
@@ -54,123 +51,123 @@ Note: Recompile with -Xlint:deprecation for details.
 [mock] "GET /api/state HTTP/1.1" 200 -
 
 ## flow log
-+ '[' 42 -lt 45 ']'
-+ sleep 3
-+ waited=45
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 45 -lt 45 ']'
-+ attempt=3
-+ '[' 3 -le 3 ']'
+[mock] "POST /api/command HTTP/1.1" 200 -
+[mock] "GET /api/status HTTP/1.1" 200 -
+[mock] "GET /api/status HTTP/1.1" 200 -
+[mock] "GET /api/status HTTP/1.1" 200 -
++ curl -s --max-time 10 http://127.0.0.1:47811/api/state
+{"locked": 1, "commands": ["close_app", "lock"], "closed": [{"pid": 101, "app": "chrome.exe"}], "camera_frames": 15}+ echo
+
++ grep -q 'phone paired with code' /tmp/mock.log
++ note 'вход по коду принят API ноутбука'
++ echo 'вход по коду принят API ноутбука'
+вход по коду принят API ноутбука
++ echo '- вход по коду принят API ноутбука'
++ grep -q 'CLOSE APP' /tmp/mock.log
++ note 'программа закрыта с телефона'
++ echo 'программа закрыта с телефона'
+программа закрыта с телефона
++ echo '- программа закрыта с телефона'
+++ curl -s --max-time 10 http://127.0.0.1:47811/api/state
+++ python3 -c 'import json,sys;print(json.load(sys.stdin).get('\''camera_frames'\'',0))'
++ FRAMES=15
++ '[' 15 -gt 0 ']'
++ note 'кадров камеры получено: 15'
++ echo 'кадров камеры получено: 15'
+кадров камеры получено: 15
++ echo '- кадров камеры получено: 15'
++ grep -q 'LOCK COMMAND RECEIVED' /tmp/mock.log
++ note 'команда блокировки дошла до ноутбука'
++ echo 'команда блокировки дошла до ноутбука'
+команда блокировки дошла до ноутбука
++ echo '- команда блокировки дошла до ноутбука'
++ echo '# Android UI check — CI report'
++ echo
++ echo 'Собрано автоматически: эмулятор Android, настоящий APK, мок-ноутбук.'
++ echo
+++ date -u '+%Y-%m-%d %H:%M'
++ echo '- время (UTC): 2026-11-28 08:26'
++ echo '- коммит: 4698ff1127baa0ded4a20f49e54bf101fb83c20c'
+++ '[' 1 -eq 0 ']'
+++ echo 'есть провалы'
++ echo '- итог: есть провалы'
++ echo
++ cat /tmp/checks.txt
++ echo
++ echo '## Скриншоты в папке'
++ echo
++ ls -1 docs/android
++ sed 's/^/- /'
++ echo '== the laptop is far away: internet relay =='
+== the laptop is far away: internet relay ==
++ adb logcat -d -s FIDEXE
+++ grep -c relay: /tmp/app-relay-before.log
++ note 'интернет-канал перед отключением Wi-Fi: 4 строк лога'
++ echo 'интернет-канал перед отключением Wi-Fi: 4 строк лога'
+интернет-канал перед отключением Wi-Fi: 4 строк лога
++ echo '- интернет-канал перед отключением Wi-Fi: 4 строк лога'
++ pkill -f mock_remote.py
++ sleep 2
++ note 'локальная сеть отключена: мок-ноутбук остановлен'
++ echo 'локальная сеть отключена: мок-ноутбук остановлен'
+локальная сеть отключена: мок-ноутбук остановлен
++ echo '- локальная сеть отключена: мок-ноутбук остановлен'
++ curl -s --max-time 3 http://127.0.0.1:47811/api/ping
++ note 'локальный адрес 47811 больше не отвечает'
++ echo 'локальный адрес 47811 больше не отвечает'
+локальный адрес 47811 больше не отвечает
++ echo '- локальный адрес 47811 больше не отвечает'
++ relay_lock=
++ attempt=1
++ '[' 1 -le 3 ']'
 + '[' -z '' ']'
 + python3 tools/android_ui.py tap-text 'Заблокировать ноутбук'
-tap-text Заблокировать ноутбук NOT FOUND
-+ step_failed 'tap lock through the relay'
-+ echo 'STEP FAILED: tap lock through the relay'
-STEP FAILED: tap lock through the relay
-+ echo '- FAIL: tap lock through the relay'
-+ STATUS=1
+tap-text Заблокировать ноутбук ok
 + waited=0
 + '[' 0 -lt 45 ']'
 + sleep 3
 + waited=3
 + grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 3 -lt 45 ']'
-+ sleep 3
-+ waited=6
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 6 -lt 45 ']'
-+ sleep 3
-+ waited=9
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 9 -lt 45 ']'
-+ sleep 3
-+ waited=12
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 12 -lt 45 ']'
-+ sleep 3
-+ waited=15
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 15 -lt 45 ']'
-+ sleep 3
-+ waited=18
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 18 -lt 45 ']'
-+ sleep 3
-+ waited=21
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 21 -lt 45 ']'
-+ sleep 3
-+ waited=24
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 24 -lt 45 ']'
-+ sleep 3
-+ waited=27
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 27 -lt 45 ']'
-+ sleep 3
-+ waited=30
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 30 -lt 45 ']'
-+ sleep 3
-+ waited=33
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 33 -lt 45 ']'
-+ sleep 3
-+ waited=36
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 36 -lt 45 ']'
-+ sleep 3
-+ waited=39
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 39 -lt 45 ']'
-+ sleep 3
-+ waited=42
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 42 -lt 45 ']'
-+ sleep 3
-+ waited=45
-+ grep -q 'LOCK COMMAND RECEIVED OVER THE INTERNET' /tmp/relay.log
-+ '[' 45 -lt 45 ']'
-+ attempt=4
-+ '[' 4 -le 3 ']'
++ relay_lock=yes
++ break
++ attempt=2
++ '[' 2 -le 3 ']'
++ '[' -z yes ']'
 + take_shot relay.png
 + python3 tools/android_ui.py shot docs/android/relay.png
-saved docs/android/relay.png 192999 bytes
+saved docs/android/relay.png 229108 bytes
 + note 'screenshot: relay.png'
 + echo 'screenshot: relay.png'
 screenshot: relay.png
 + echo '- screenshot: relay.png'
 + adb logcat -d -s FIDEXE
 + python3 tools/android_ui.py dump
-+ '[' -n '' ']'
-+ step_failed 'блокировка через интернет не дошла'
-+ echo 'STEP FAILED: блокировка через интернет не дошла'
-STEP FAILED: блокировка через интернет не дошла
-+ echo '- FAIL: блокировка через интернет не дошла'
-+ STATUS=1
-+ tail -n 15 /tmp/relay.log
-[relay] 08:19:07 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:19:17 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:19:27 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:19:38 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:19:48 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:19:58 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:20:08 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:20:18 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:20:29 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:20:39 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:20:49 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:20:59 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:21:10 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:21:20 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
-[relay] 08:21:30 broker test.mosquitto.org:8883 failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)
++ '[' -n yes ']'
++ note 'блокировка через интернет (публичный брокер, E2E-шифрование) — дошла'
++ echo 'блокировка через интернет (публичный брокер, E2E-шифрование) — дошла'
+блокировка через интернет (публичный брокер, E2E-шифрование) — дошла
++ echo '- блокировка через интернет (публичный брокер, E2E-шифрование) — дошла'
 + grep -q 'через интернет' /tmp/ui-relay.txt
++ note 'пульт сам переключился на интернет-канал'
++ echo 'пульт сам переключился на интернет-канал'
+пульт сам переключился на интернет-канал
++ echo '- пульт сам переключился на интернет-канал'
 + cp /tmp/relay.log docs/android/relay-host.txt
 + cp /tmp/app-relay.log docs/android/app-relay.txt
 + cp /tmp/app-relay-before.log docs/android/app-relay-before.txt
 + cp /tmp/ui-relay.txt docs/android/ui-relay.txt
 + grep -q 'Интернет-канал: готов' /tmp/ui-relay.txt
++ note 'пульт показывает готовый интернет-канал'
++ echo 'пульт показывает готовый интернет-канал'
+пульт показывает готовый интернет-канал
++ echo '- пульт показывает готовый интернет-канал'
 + grep -q 'Интернет-канал: ' /tmp/ui-relay.txt
+++ grep -o 'Интернет-канал: [^<]*' /tmp/ui-relay.txt
+++ head -1
++ note 'состояние канала на экране: Интернет-канал: готов (broker.hivemq.com:8883)'\'''
++ echo 'состояние канала на экране: Интернет-канал: готов (broker.hivemq.com:8883)'\'''
+состояние канала на экране: Интернет-канал: готов (broker.hivemq.com:8883)'
++ echo '- состояние канала на экране: Интернет-канал: готов (broker.hivemq.com:8883)'\'''
 + echo STATUS=1
 STATUS=1
 + exit 1
