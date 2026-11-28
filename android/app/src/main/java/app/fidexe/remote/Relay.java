@@ -1,6 +1,7 @@
 package app.fidexe.remote;
 
 import android.content.Context;
+import android.util.Log;
 
 import org.eclipse.paho.client.mqttv3.IMqttActionListener;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
@@ -37,6 +38,7 @@ import javax.crypto.spec.SecretKeySpec;
  */
 final class Relay {
 
+    private static final String TAG = "FIDEXE";
     static final String ROOT = "fidexe/v2";
     private static final byte[] AAD = "fidexe-relay-v1".getBytes(StandardCharsets.UTF_8);
     private static final long DEFAULT_TIMEOUT = 12_000L;
@@ -130,18 +132,25 @@ final class Relay {
                     }
                 });
                 MqttConnectOptions options = new MqttConnectOptions();
+                // Paho does not fall back to the platform factory on its own: without
+                // this an ssl:// connection dies with a NullPointerException on Android
+                options.setSocketFactory((javax.net.ssl.SSLSocketFactory)
+                        javax.net.ssl.SSLSocketFactory.getDefault());
                 options.setCleanSession(true);
                 options.setAutomaticReconnect(true);
                 options.setKeepAliveInterval(45);
                 options.setConnectionTimeout(12);
+                Log.i(TAG, "relay: connecting to " + host + ":" + port);
                 candidate.connect(options).waitForCompletion(15_000);
                 candidate.subscribe(topicDown, 1).waitForCompletion(10_000);
                 client = candidate;
                 connected = true;
                 currentBroker = host + ":" + port;
+                Log.i(TAG, "relay: connected to " + currentBroker);
                 return true;
             } catch (Exception exc) {
                 lastError = host + ":" + port + " — " + describe(exc);
+                Log.w(TAG, "relay: " + lastError, exc);
                 connected = false;
                 try {
                     if (client != null) {

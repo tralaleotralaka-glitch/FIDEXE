@@ -58,6 +58,7 @@ jobs:
         env:
           FIDEXE_RELAY_ID: ci-relay-demo-link
           FIDEXE_RELAY_KEY: 6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f
+          FIDEXE_RELAY_BROKERS: broker.hivemq.com:8883,broker.emqx.io:8883,test.mosquitto.org:8883
         run: |
           nohup python3 tools/mock_remote.py --port 47811 > /tmp/mock.log 2>&1 &
           sleep 2
@@ -68,6 +69,7 @@ jobs:
           FIDEXE_RELAY_ID: ci-relay-demo-link
           FIDEXE_RELAY_KEY: 6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f
           FIDEXE_DEMO_TOKEN: demo-token-for-ci
+          FIDEXE_RELAY_BROKERS: broker.hivemq.com:8883,broker.emqx.io:8883,test.mosquitto.org:8883
         run: |
           nohup python3 tools/relay_host.py > /tmp/relay-host.out 2>&1 &
           for i in $(seq 1 20); do

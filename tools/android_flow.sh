@@ -156,24 +156,50 @@ fi
 } > "$OUT/CI-STATUS.md"
 
 echo "== the laptop is far away: internet relay =="
+adb logcat -d -s FIDEXE > /tmp/app-relay-before.log 2>/dev/null || true
+note "интернет-канал перед отключением Wi-Fi: $(grep -c 'relay:' /tmp/app-relay-before.log 2>/dev/null || echo 0) строк лога"
 pkill -f mock_remote.py || true
 sleep 2
 note "локальная сеть отключена: мок-ноутбук остановлен"
 curl -s --max-time 3 http://127.0.0.1:47811/api/ping > /dev/null 2>&1 \
     && step_failed "mock laptop is still running" \
     || note "локальный адрес 47811 больше не отвечает"
-python3 tools/android_ui.py tap-text "Заблокировать ноутбук" || step_failed "tap lock through the relay"
-sleep 18
+
+relay_lock=""
+attempt=1
+while [ "$attempt" -le 3 ] && [ -z "$relay_lock" ]; do
+    python3 tools/android_ui.py tap-text "Заблокировать ноутбук" || step_failed "tap lock through the relay"
+    waited=0
+    while [ "$waited" -lt 45 ]; do
+        sleep 3
+        waited=$((waited + 3))
+        if grep -q "LOCK COMMAND RECEIVED OVER THE INTERNET" /tmp/relay.log 2>/dev/null; then
+            relay_lock=yes
+            break
+        fi
+    done
+    attempt=$((attempt + 1))
+done
 take_shot relay.png
-if grep -q "LOCK COMMAND RECEIVED OVER THE INTERNET" /tmp/relay.log 2>/dev/null; then
+adb logcat -d -s FIDEXE > /tmp/app-relay.log 2>/dev/null || true
+python3 tools/android_ui.py dump > /tmp/ui-relay.txt 2>&1 || true
+if [ -n "$relay_lock" ]; then
     note "блокировка через интернет (публичный брокер, E2E-шифрование) — дошла"
 else
     step_failed "блокировка через интернет не дошла"
-    tail -n 25 /tmp/relay.log 2>/dev/null || true
+    tail -n 15 /tmp/relay.log 2>/dev/null || true
 fi
-python3 tools/android_ui.py dump > /tmp/ui-relay.txt 2>&1 || true
 if grep -q "через интернет" /tmp/ui-relay.txt; then
     note "пульт сам переключился на интернет-канал"
+fi
+cp /tmp/relay.log docs/android/relay-host.log 2>/dev/null || true
+cp /tmp/app-relay.log docs/android/app-relay.log 2>/dev/null || true
+cp /tmp/ui-relay.txt docs/android/ui-relay.txt 2>/dev/null || true
+if grep -q "Интернет-канал: готов" /tmp/ui-relay.txt; then
+    note "пульт показывает готовый интернет-канал"
+fi
+if grep -q "Интернет-канал: " /tmp/ui-relay.txt; then
+    note "состояние канала на экране: $(grep -o 'Интернет-канал: [^<]*' /tmp/ui-relay.txt | head -1)"
 fi
 
 echo "STATUS=$STATUS"

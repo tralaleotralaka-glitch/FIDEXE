@@ -90,6 +90,7 @@ public class MainActivity extends Activity {
     // control screen
     private TextView laptopLabel;
     private TextView statusLine;
+    private TextView relayLine;
     private TextView addressLine;
     private TextView timeValue;
     private TextView focusValue;
@@ -188,15 +189,41 @@ public class MainActivity extends Activity {
             relayConnecting = false;
             if (!ok) {
                 log("Интернет-связь не поднялась: " + channel.lastError());
+                ui.post(this::updateRelayLine);
                 return;
             }
             ui.post(() -> {
                 log("Интернет-связь готова: " + channel.brokerName());
+                updateRelayLine();
                 if ("control".equals(screen)) {
                     refreshOnce();
                 }
             });
         });
+    }
+
+    /** One honest line: will the panel work when the laptop is far away? */
+    private void updateRelayLine() {
+        if (relayLine == null) {
+            return;
+        }
+        Relay channel = relayChannel;
+        if (channel == null || !channel.usable()) {
+            relayLine.setText("Интернет-канал: нет ключа — подключитесь по коду дома");
+            relayLine.setTextColor(FAINT);
+        } else if (channel.isConnected()) {
+            relayLine.setText("Интернет-канал: готов (" + channel.brokerName() + ")");
+            relayLine.setTextColor(MINT);
+        } else if (relayConnecting) {
+            relayLine.setText("Интернет-канал: подключаюсь…");
+            relayLine.setTextColor(MUTED);
+        } else {
+            String why = channel.lastError();
+            relayLine.setText(why.isEmpty()
+                    ? "Интернет-канал: не подключён"
+                    : "Интернет-канал: " + why);
+            relayLine.setTextColor(WARN);
+        }
     }
 
     private void rememberRelay(org.json.JSONObject auth) {
@@ -532,7 +559,11 @@ public class MainActivity extends Activity {
         reconnectButton.setOnClickListener(v -> reconnect());
         statusRow.addView(reconnectButton);
         statusCard.addView(statusRow);
+        relayLine = text("", FAINT, 11, false);
+        relayLine.setPadding(0, dp(6), 0, 0);
+        statusCard.addView(relayLine);
         container.addView(statusCard, lpm(-1, -2, 12));
+        updateRelayLine();
 
         // stats grid
         LinearLayout row1 = new LinearLayout(this);

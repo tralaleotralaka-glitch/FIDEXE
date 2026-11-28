@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -119,55 +120,66 @@ def handle(op: str, payload: dict, token: str) -> tuple[dict, str]:
     raise ValueError("Неизвестная операция")
 
 
+def serve(host: str, port: int) -> None:
+    """Keep one connection per broker: the phone may pick any of them."""
+    while True:
+        client = mqtt.Client(client_id=f"relay-host-{uuid.uuid4().hex[:6]}", clean_session=True)
+        try:
+            if not PLAIN:
+                client.tls_set()
+            client.connect(host, port, keepalive=45)
+        except Exception as exc:  # noqa: BLE001
+            log(f"broker {host}:{port} failed: {exc}")
+            time.sleep(10)
+            continue
+        client.subscribe(TOPICS["up"], qos=1)
+
+        def on_message(_client, _userdata, message, _host=host) -> None:
+            try:
+                request = decrypt(KEY, message.payload.decode("ascii"))
+            except Exception as exc:  # noqa: BLE001
+                log(f"bad message dropped: {exc}")
+                return
+            op = str(request.get("op", ""))
+            payload = request.get("p") if isinstance(request.get("p"), dict) else {}
+            reply = {"v": 1, "id": str(request.get("id", ""))}
+            try:
+                data, label = handle(op, payload, str(request.get("t", "")))
+                reply.update({"ok": True, "p": data})
+                log(f"{label.upper()} ANSWERED via {_host}")
+            except PermissionError as exc:
+                reply.update({"ok": False, "e": str(exc), "c": 401})
+                log(f"{op.upper()} REFUSED: {exc}")
+            except Exception as exc:  # noqa: BLE001
+                reply.update({"ok": False, "e": str(exc), "c": 400})
+                log(f"{op.upper()} ERROR: {exc}")
+            try:
+                client.publish(TOPICS["down"], encrypt(KEY, reply), qos=1)
+            except Exception as exc:  # noqa: BLE001
+                log(f"publish failed: {exc}")
+
+        client.on_message = on_message
+        client.publish(TOPICS["presence"],
+                       json.dumps({"v": 1, "up": True, "host": "DESKTOP-DEMO"}),
+                       qos=1, retain=True)
+        log(f"READY on {host}:{port}")
+        try:
+            client.loop_forever(retry_first_connection=False)
+        except Exception as exc:  # noqa: BLE001
+            log(f"loop stopped on {host}: {exc}")
+        time.sleep(3)
+
+
 def main() -> int:
     LOG.write_text("", encoding="utf-8")
     log(f"starting, link={LINK_ID[:6]}… brokers={BROKERS}")
+    threads = []
+    for host, port in BROKERS:
+        thread = threading.Thread(target=serve, args=(host, port), daemon=True)
+        thread.start()
+        threads.append(thread)
     while True:
-        for host, port in BROKERS:
-            client = mqtt.Client(client_id=f"relay-host-{uuid.uuid4().hex[:6]}", clean_session=True)
-            try:
-                if not PLAIN:
-                    client.tls_set()
-                client.connect(host, port, keepalive=45)
-            except Exception as exc:  # noqa: BLE001
-                log(f"broker {host}:{port} failed: {exc}")
-                continue
-            client.subscribe(TOPICS["up"], qos=1)
-
-            def on_message(_client, _userdata, message) -> None:
-                try:
-                    request = decrypt(KEY, message.payload.decode("ascii"))
-                except Exception as exc:  # noqa: BLE001
-                    log(f"bad message dropped: {exc}")
-                    return
-                op = str(request.get("op", ""))
-                payload = request.get("p") if isinstance(request.get("p"), dict) else {}
-                reply = {"v": 1, "id": str(request.get("id", ""))}
-                try:
-                    data, label = handle(op, payload, str(request.get("t", "")))
-                    reply.update({"ok": True, "p": data})
-                    log(f"{label.upper()} ANSWERED")
-                except PermissionError as exc:
-                    reply.update({"ok": False, "e": str(exc), "c": 401})
-                    log(f"{op.upper()} REFUSED: {exc}")
-                except Exception as exc:  # noqa: BLE001
-                    reply.update({"ok": False, "e": str(exc), "c": 400})
-                    log(f"{op.upper()} ERROR: {exc}")
-                try:
-                    client.publish(TOPICS["down"], encrypt(KEY, reply), qos=1)
-                except Exception as exc:  # noqa: BLE001
-                    log(f"publish failed: {exc}")
-
-            client.on_message = on_message
-            client.publish(TOPICS["presence"], json.dumps({"v": 1, "up": True, "host": "DESKTOP-DEMO"}),
-                           qos=1, retain=True)
-            log(f"READY on {host}:{port}")
-            try:
-                client.loop_forever(retry_first_connection=False)
-            except Exception as exc:  # noqa: BLE001
-                log(f"loop stopped: {exc}")
-            time.sleep(3)
-        time.sleep(5)
+        time.sleep(3600)
 
 
 if __name__ == "__main__":
