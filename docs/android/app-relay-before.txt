@@ -1,5 +1,4 @@
 --------- beginning of main
-11-28 08:25:21.210  1823  2507 I FIDEXE  : relay: connecting to broker.hivemq.com:8883
-11-28 08:25:22.540  1823  2507 I FIDEXE  : relay: connected to broker.hivemq.com:8883
-11-28 08:25:34.825  2557  2578 I FIDEXE  : relay: connecting to broker.hivemq.com:8883
-11-28 08:25:48.932  2557  2578 I FIDEXE  : relay: connected to broker.hivemq.com:8883
+11-28 08:30:30.467  2030  2498 I FIDEXE  : relay: connecting to broker.hivemq.com:8883
+11-28 08:30:44.167  2554  2573 I FIDEXE  : relay: connecting to broker.hivemq.com:8883
+11-28 08:30:45.455  2554  2573 I FIDEXE  : relay: connected to broker.hivemq.com:8883
