@@ -69,9 +69,17 @@ echo "== the phone remembers the laptop after a restart =="
 adb shell am force-stop app.fidexe.remote
 sleep 1
 adb shell am start -n app.fidexe.remote/.MainActivity || step_failed "restart app"
-sleep 7
-python3 tools/android_ui.py dump > /tmp/ui-relaunch.txt 2>&1 || true
-if grep -q "Заблокировать ноутбук" /tmp/ui-relaunch.txt && grep -q "На связи" /tmp/ui-relaunch.txt; then
+relaunch_ok=""
+for _ in $(seq 1 8); do
+    sleep 4
+    python3 tools/android_ui.py dump > /tmp/ui-relaunch.txt 2>&1 || true
+    if grep -q "Заблокировать ноутбук" /tmp/ui-relaunch.txt && grep -q "На связи" /tmp/ui-relaunch.txt; then
+        relaunch_ok=yes
+        break
+    fi
+done
+cp /tmp/ui-relaunch.txt docs/android/ui-relaunch.txt 2>/dev/null || true
+if [ -n "$relaunch_ok" ]; then
     note "телефон остался подключён после перезапуска приложения"
 else
     step_failed "the app forgot the laptop after a restart"
@@ -199,8 +207,9 @@ cp /tmp/ui-relay.txt docs/android/ui-relay.txt 2>/dev/null || true
 if grep -q "Интернет-канал: готов" /tmp/ui-relay.txt; then
     note "пульт показывает готовый интернет-канал"
 fi
-if grep -q "Интернет-канал: " /tmp/ui-relay.txt; then
-    note "состояние канала на экране: $(grep -o 'Интернет-канал: [^<]*' /tmp/ui-relay.txt | head -1)"
+grep -o "text='Интернет-канал[^']*'" /tmp/ui-relay.txt | head -1 > /tmp/channel.txt || true
+if [ -s /tmp/channel.txt ]; then
+    note "на экране: $(cat /tmp/channel.txt)"
 fi
 
 echo "STATUS=$STATUS"
