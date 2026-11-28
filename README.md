@@ -9,8 +9,8 @@
 
 | Что | Ссылка | Размер |
 | --- | --- | --- |
-| Windows 10/11 | **[FIDEXE.exe v2.3.0](https://github.com/tralaleotralaka-glitch/FIDEXE/releases/download/v2.3.0/FIDEXE.exe)** | ~86 МБ |
-| Android 7.0+ | **[FIDEXE-Remote-2.3.0.apk](https://github.com/tralaleotralaka-glitch/FIDEXE/releases/download/android-v2.3.0/FIDEXE-Remote-2.3.0.apk)** | ~90 КБ |
+| Windows 10/11 | **[FIDEXE.exe v2.3.0](https://github.com/tralaleotralaka-glitch/FIDEXE/releases/download/v2.3.0/FIDEXE.exe)** | ~90 МБ |
+| Android 7.0+ | **[FIDEXE-Remote-2.3.0.apk](https://github.com/tralaleotralaka-glitch/FIDEXE/releases/download/android-v2.3.0/FIDEXE-Remote-2.3.0.apk)** | ~190 КБ |
 
 1. Скачайте `FIDEXE.exe` и запустите — установка и права администратора не нужны.
 2. SmartScreen может предупредить, потому что файл не подписан сертификатом:
