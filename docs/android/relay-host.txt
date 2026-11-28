@@ -1,7 +1,7 @@
-[relay] 08:39:30 starting, link=ci-rel… brokers=[('broker.hivemq.com', 8883), ('broker.emqx.io', 8883)]
-[relay] 08:39:30 READY on broker.emqx.io:8883
-[relay] 08:39:31 READY on broker.hivemq.com:8883
-[relay] 08:42:37 STATUS ANSWERED via broker.hivemq.com
-[relay] 08:42:38 LOCK COMMAND RECEIVED OVER THE INTERNET
-[relay] 08:42:38 LOCK ANSWERED via broker.hivemq.com
-[relay] 08:42:39 STATUS ANSWERED via broker.hivemq.com
+[relay] 08:52:45 starting, link=ci-rel… brokers=[('broker.hivemq.com', 8883), ('broker.emqx.io', 8883)]
+[relay] 08:52:45 READY on broker.emqx.io:8883
+[relay] 08:52:46 READY on broker.hivemq.com:8883
+[relay] 08:55:54 STATUS ANSWERED via broker.hivemq.com
+[relay] 08:55:55 LOCK COMMAND RECEIVED OVER THE INTERNET
+[relay] 08:55:55 LOCK ANSWERED via broker.hivemq.com
+[relay] 08:55:56 STATUS ANSWERED via broker.hivemq.com

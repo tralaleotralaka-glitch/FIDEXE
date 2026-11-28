@@ -22,4 +22,4 @@ TextView       (557, 1500, 1025, 1638) clickable=True text='Пауза трек�
 TextView       (55, 1660, 523, 1798) clickable=True text='Камера ноутбука'
 TextView       (557, 1660, 1025, 1798) clickable=True text='Приложения'
 TextView       (55, 1837, 1025, 1881) clickable=False text='Блокирую ноутбук — готово'
-TextView       (55, 1925, 1025, 2007) clickable=False text='Команда выполняется сразу после нажатия. Ноутбук и телефон должны быть в одной Wi-Fi сети.'
+TextView       (55, 1925, 1025, 2007) clickable=False text='Команда выполняется сразу после нажатия — дома по Wi-Fi, вдали от дома через зашифрованный интернет.'
